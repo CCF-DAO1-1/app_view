@@ -1,0 +1,112 @@
+use chrono::{DateTime, Local};
+use color_eyre::{Result, eyre::OptionExt};
+use sea_query::{ColumnDef, Expr, Iden, OnConflict, PostgresQueryBuilder};
+use sea_query_sqlx::SqlxBinder;
+use serde::Serialize;
+use serde_json::Value;
+use sqlx::{Executor, Pool, Postgres, query, query_with};
+
+#[derive(Iden)]
+pub enum Like {
+    Table,
+    Uri,
+    Cid,
+    Repo,
+    To,
+    Updated,
+    Created,
+}
+
+impl Like {
+    pub async fn init(db: &Pool<Postgres>) -> Result<()> {
+        let sql = sea_query::Table::create()
+            .table(Self::Table)
+            .if_not_exists()
+            .col(ColumnDef::new(Self::Uri).string().not_null().primary_key())
+            .col(ColumnDef::new(Self::Cid).string().not_null())
+            .col(ColumnDef::new(Self::Repo).string().not_null())
+            .col(ColumnDef::new(Self::To).string().not_null())
+            .col(
+                ColumnDef::new(Self::Updated)
+                    .timestamp_with_time_zone()
+                    .not_null()
+                    .default(Expr::current_timestamp()),
+            )
+            .col(
+                ColumnDef::new(Self::Created)
+                    .timestamp_with_time_zone()
+                    .not_null()
+                    .default(Expr::current_timestamp()),
+            )
+            .build(PostgresQueryBuilder);
+        db.execute(query(&sql)).await?;
+        Ok(())
+    }
+
+    pub async fn insert(
+        db: &Pool<Postgres>,
+        repo: &str,
+        like: &Value,
+        uri: &str,
+        cid: &str,
+    ) -> Result<()> {
+        let to = like["to"]
+            .as_str()
+            .map(|s| s.trim_matches('\"'))
+            .ok_or_eyre("error in to")?;
+        let created = like["created"]
+            .as_str()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .ok_or_eyre("error in created")?;
+        let (sql, values) = sea_query::Query::insert()
+            .into_table(Self::Table)
+            .columns([
+                Self::Uri,
+                Self::Cid,
+                Self::Repo,
+                Self::To,
+                Self::Updated,
+                Self::Created,
+            ])
+            .values([
+                uri.into(),
+                cid.into(),
+                repo.into(),
+                to.into(),
+                Expr::current_timestamp(),
+                created.into(),
+            ])?
+            .returning_col(Self::Uri)
+            .on_conflict(
+                OnConflict::column(Self::Uri)
+                    .update_columns([Self::Cid, Self::Repo, Self::To, Self::Updated])
+                    .to_owned(),
+            )
+            .build_sqlx(PostgresQueryBuilder);
+        debug!("insert exec sql: {sql}");
+        db.execute(query_with(&sql, values)).await?;
+        Ok(())
+    }
+}
+
+#[derive(sqlx::FromRow, Debug, Serialize)]
+#[allow(dead_code)]
+pub struct LikeRow {
+    pub uri: String,
+    pub cid: String,
+    pub repo: String,
+    pub to: String,
+    pub updated: DateTime<Local>,
+    pub created: DateTime<Local>,
+}
+
+#[derive(Debug, Serialize)]
+#[allow(dead_code)]
+pub struct LikeView {
+    pub uri: String,
+    pub cid: String,
+    pub author: Value,
+    pub to: String,
+    pub updated: DateTime<Local>,
+    pub created: DateTime<Local>,
+}
