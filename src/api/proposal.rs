@@ -23,7 +23,7 @@ use crate::{
 
 #[derive(Debug, Validate, Deserialize)]
 #[serde(default)]
-pub(crate) struct ProposalQuery {
+pub struct ProposalQuery {
     pub section_id: Option<String>,
     pub cursor: Option<String>,
     pub limit: u64,
@@ -45,7 +45,7 @@ impl Default for ProposalQuery {
     }
 }
 
-pub(crate) async fn list(
+pub async fn list(
     State(state): State<AppView>,
     Json(query): Json<ProposalQuery>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -98,12 +98,12 @@ pub(crate) async fn list(
 
 #[derive(Debug, Default, Validate, Deserialize)]
 #[serde(default)]
-pub(crate) struct TopQuery {
+pub struct TopQuery {
     pub section_id: String,
     pub viewer: Option<String>,
 }
 
-pub(crate) async fn detail(
+pub async fn detail(
     State(state): State<AppView>,
     Query(query): Query<Value>,
 ) -> Result<impl IntoResponse, AppError> {

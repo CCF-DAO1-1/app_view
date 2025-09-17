@@ -19,7 +19,7 @@ use crate::{
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
-pub(crate) struct NewRecord {
+pub struct NewRecord {
     repo: String,
     rkey: String,
     value: Value,
@@ -28,7 +28,7 @@ pub(crate) struct NewRecord {
     root: Value,
 }
 
-pub(crate) async fn create(
+pub async fn create(
     State(state): State<AppView>,
     TypedHeader(auth): TypedHeader<Authorization<Bearer>>,
     Json(new_record): Json<NewRecord>,
@@ -88,7 +88,7 @@ pub(crate) async fn create(
     Ok(ok(result))
 }
 
-pub(crate) async fn update(
+pub async fn update(
     State(state): State<AppView>,
     TypedHeader(auth): TypedHeader<Authorization<Bearer>>,
     Json(new_record): Json<NewRecord>,

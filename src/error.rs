@@ -7,7 +7,7 @@ use common_x::restful::axum::{
 use serde_json::json;
 
 #[derive(Debug)]
-pub(crate) enum AppError {
+pub enum AppError {
     ValidateFailed(String),
     NotFound,
     CallPdsFailed(String),

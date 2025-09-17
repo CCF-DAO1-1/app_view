@@ -19,7 +19,7 @@ use crate::{
 
 #[derive(Debug, Validate, Deserialize)]
 #[serde(default)]
-pub(crate) struct LikeQuery {
+pub struct LikeQuery {
     pub repo: Option<String>,
     pub to: Option<String>,
     pub cursor: Option<String>,
@@ -37,7 +37,7 @@ impl Default for LikeQuery {
     }
 }
 
-pub(crate) async fn list(
+pub async fn list(
     State(state): State<AppView>,
     Json(query): Json<LikeQuery>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -45,7 +45,7 @@ pub(crate) async fn list(
     Ok(ok(result))
 }
 
-pub(crate) async fn list_like(state: &AppView, query: LikeQuery) -> Result<Value, AppError> {
+pub async fn list_like(state: &AppView, query: LikeQuery) -> Result<Value, AppError> {
     query
         .validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;

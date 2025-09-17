@@ -1,8 +1,8 @@
-pub(crate) mod proposal;
-pub(crate) mod record;
-pub(crate) mod reply;
-pub(crate) mod repo;
-pub(crate) mod like;
+pub mod like;
+pub mod proposal;
+pub mod record;
+pub mod reply;
+pub mod repo;
 
 use color_eyre::eyre::OptionExt;
 use serde_json::{Value, json};
@@ -12,7 +12,8 @@ use crate::{
     atproto::{NSID_PROFILE, get_record},
 };
 
-pub(crate) struct ToTimestamp;
+#[derive(Debug, Clone, Copy)]
+pub struct ToTimestamp;
 
 impl sea_query::Iden for ToTimestamp {
     fn unquoted(&self) -> &str {
@@ -20,7 +21,7 @@ impl sea_query::Iden for ToTimestamp {
     }
 }
 
-pub(crate) async fn build_author(state: &AppView, repo: &str) -> Value {
+pub async fn build_author(state: &AppView, repo: &str) -> Value {
     // Get profile
     let mut author = get_record(&state.pds, repo, NSID_PROFILE, "self")
         .await

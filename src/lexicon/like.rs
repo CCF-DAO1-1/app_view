@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::Value;
 use sqlx::{Executor, Pool, Postgres, query, query_with};
 
-#[derive(Iden)]
+#[derive(Iden, Debug, Clone, Copy)]
 pub enum Like {
     Table,
     Uri,

@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use crate::{AppView, api::build_author, atproto::index_query, error::AppError};
 
-pub(crate) async fn profile(
+pub async fn profile(
     State(state): State<AppView>,
     Query(query): Query<Value>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -27,7 +27,7 @@ pub(crate) async fn profile(
     Ok(ok(author))
 }
 
-pub(crate) async fn login_info(
+pub async fn login_info(
     State(state): State<AppView>,
     Query(query): Query<Value>,
 ) -> Result<impl IntoResponse, AppError> {

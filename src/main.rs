@@ -1,8 +1,3 @@
-mod api;
-mod atproto;
-mod error;
-mod lexicon;
-
 #[macro_use]
 extern crate tracing as logger;
 
@@ -12,20 +7,14 @@ use clap::Parser;
 use color_eyre::{Result, eyre::eyre};
 use common_x::restful::axum::routing::get;
 use common_x::restful::axum::{Router, routing::post};
-use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
+use dao::{AppView, api};
+use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
 use tower_http::timeout::TimeoutLayer;
 
-use crate::lexicon::like::Like;
-use crate::lexicon::proposal::Proposal;
-use crate::lexicon::reply::Reply;
-
-#[derive(Clone)]
-struct AppView {
-    db: Pool<Postgres>,
-    pds: String,
-    whitelist: Vec<String>,
-}
+use dao::lexicon::like::Like;
+use dao::lexicon::proposal::Proposal;
+use dao::lexicon::reply::Reply;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version)]
