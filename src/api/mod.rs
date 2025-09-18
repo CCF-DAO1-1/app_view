@@ -23,7 +23,6 @@ use crate::{
         record::create,
         record::update,
         repo::profile,
-        repo::login_info,
         proposal::list,
         proposal::detail,
         reply::list,

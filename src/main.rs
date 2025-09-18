@@ -80,7 +80,6 @@ async fn main() -> Result<()> {
         .route("/api/record/create", post(api::record::create))
         .route("/api/record/update", post(api::record::update))
         .route("/api/repo/profile", get(api::repo::profile))
-        .route("/api/repo/login_info", get(api::repo::login_info))
         .route("/api/proposal/list", post(api::proposal::list))
         .route("/api/proposal/detail", get(api::proposal::detail))
         .route("/api/reply/list", post(api::reply::list))

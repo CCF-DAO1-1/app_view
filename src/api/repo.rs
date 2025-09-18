@@ -6,11 +6,11 @@ use common_x::restful::{
     ok,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use utoipa::IntoParams;
 use validator::Validate;
 
-use crate::{AppView, api::build_author, atproto::index_query, error::AppError};
+use crate::{AppView, api::build_author, error::AppError};
 
 #[derive(Debug, Default, Validate, Deserialize, IntoParams)]
 #[serde(default)]
@@ -34,45 +34,4 @@ pub async fn profile(
     }
 
     Ok(ok(author))
-}
-
-#[utoipa::path(get, path = "/api/repo/login_info", params(RepoQuery))]
-pub async fn login_info(
-    State(state): State<AppView>,
-    Query(query): Query<RepoQuery>,
-) -> Result<impl IntoResponse, AppError> {
-    query
-        .validate()
-        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
-
-    let first = index_query(&state.pds, &query.repo, "firstItem")
-        .await
-        .map_err(|e| AppError::CallPdsFailed(e.to_string()))?;
-    let first = first
-        .pointer("/result/result")
-        .cloned()
-        .and_then(|i| i.as_u64())
-        .ok_or(AppError::CallPdsFailed(first.to_string()))?;
-    let second = index_query(&state.pds, &query.repo, "secondItem")
-        .await
-        .map_err(|e| AppError::CallPdsFailed(e.to_string()))?;
-    let second = second
-        .pointer("/result/result")
-        .cloned()
-        .and_then(|i| i.as_u64())
-        .ok_or(AppError::CallPdsFailed(second.to_string()))?;
-    let third = index_query(&state.pds, &query.repo, "thirdItem")
-        .await
-        .map_err(|e| AppError::CallPdsFailed(e.to_string()))?;
-    let third = third
-        .pointer("/result/result")
-        .cloned()
-        .and_then(|i| i.as_u64())
-        .ok_or(AppError::CallPdsFailed(third.to_string()))?;
-
-    Ok(ok(json!({
-        "firstItem": first,
-        "secondItem": second,
-        "thirdItem": third,
-    })))
 }
