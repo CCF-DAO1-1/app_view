@@ -9,6 +9,7 @@ use common_x::restful::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use utoipa::ToSchema;
 
 use crate::{
     AppView,
@@ -17,7 +18,7 @@ use crate::{
     lexicon::{like::Like, proposal::Proposal, reply::Reply},
 };
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct NewRecord {
     repo: String,
@@ -28,6 +29,7 @@ pub struct NewRecord {
     root: Value,
 }
 
+#[utoipa::path(post, path = "/api/record/create")]
 pub async fn create(
     State(state): State<AppView>,
     TypedHeader(auth): TypedHeader<Authorization<Bearer>>,
@@ -88,6 +90,7 @@ pub async fn create(
     Ok(ok(result))
 }
 
+#[utoipa::path(post, path = "/api/record/update")]
 pub async fn update(
     State(state): State<AppView>,
     TypedHeader(auth): TypedHeader<Authorization<Bearer>>,

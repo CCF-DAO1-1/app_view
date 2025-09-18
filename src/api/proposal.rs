@@ -1,4 +1,4 @@
-use color_eyre::eyre::{OptionExt, eyre};
+use color_eyre::eyre::eyre;
 use common_x::restful::{
     axum::{
         Json,
@@ -10,8 +10,9 @@ use common_x::restful::{
 use sea_query::{BinOper, Expr, ExprTrait, Func, Order, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use sqlx::query_as_with;
+use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
 use crate::{
@@ -21,7 +22,7 @@ use crate::{
     lexicon::proposal::{Proposal, ProposalRow, ProposalView},
 };
 
-#[derive(Debug, Validate, Deserialize)]
+#[derive(Debug, Validate, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ProposalQuery {
     pub section_id: Option<String>,
@@ -45,6 +46,7 @@ impl Default for ProposalQuery {
     }
 }
 
+#[utoipa::path(post, path = "/api/proposal/list")]
 pub async fn list(
     State(state): State<AppView>,
     Json(query): Json<ProposalQuery>,
@@ -96,28 +98,25 @@ pub async fn list(
     Ok(ok(result))
 }
 
-#[derive(Debug, Default, Validate, Deserialize)]
+#[derive(Debug, Default, Validate, Deserialize, IntoParams)]
 #[serde(default)]
-pub struct TopQuery {
-    pub section_id: String,
+pub struct UriQuery {
+    #[validate(length(min = 1))]
+    pub uri: String,
     pub viewer: Option<String>,
 }
 
+#[utoipa::path(get, path = "/api/proposal/detail", params(UriQuery))]
 pub async fn detail(
     State(state): State<AppView>,
-    Query(query): Query<Value>,
+    Query(query): Query<UriQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let uri = query
-        .get("uri")
-        .and_then(|u| u.as_str())
-        .ok_or_eyre("uri not be null")?;
-    let viewer = query
-        .get("viewer")
-        .and_then(|u| u.as_str())
-        .map(|s| s.to_string());
+    query
+        .validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let (sql, values) = Proposal::build_select(viewer)
-        .and_where(Expr::col(Proposal::Uri).eq(uri))
+    let (sql, values) = Proposal::build_select(query.viewer)
+        .and_where(Expr::col(Proposal::Uri).eq(query.uri))
         .build_sqlx(PostgresQueryBuilder);
 
     debug!("sql: {sql} ({values:?})");

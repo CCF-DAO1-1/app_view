@@ -7,6 +7,7 @@ use clap::Parser;
 use color_eyre::{Result, eyre::eyre};
 use common_x::restful::axum::routing::get;
 use common_x::restful::axum::{Router, routing::post};
+use dao::api::ApiDoc;
 use dao::{AppView, api};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
@@ -15,6 +16,8 @@ use tower_http::timeout::TimeoutLayer;
 use dao::lexicon::like::Like;
 use dao::lexicon::proposal::Proposal;
 use dao::lexicon::reply::Reply;
+use utoipa::OpenApi;
+use utoipa_scalar::{Scalar, Servable};
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version)]
@@ -29,6 +32,8 @@ pub struct Args {
     pds: String,
     #[clap(short, long, default_value = "")]
     whitelist: String,
+    #[clap(short, long, default_value = "false")]
+    apidoc: bool,
 }
 
 #[tokio::main]
@@ -63,8 +68,15 @@ async fn main() -> Result<()> {
             .collect(),
     };
 
-    // api
-    let router = Router::new()
+    let router = if args.apidoc {
+        Router::new()
+            // openapi docs
+            .merge(Scalar::with_url("/apidoc", ApiDoc::openapi()))
+    } else {
+        Router::new()
+    };
+    let router = router
+        // api routes
         .route("/api/record/create", post(api::record::create))
         .route("/api/record/update", post(api::record::update))
         .route("/api/repo/profile", get(api::repo::profile))

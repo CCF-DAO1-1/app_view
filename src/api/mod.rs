@@ -6,11 +6,50 @@ pub mod repo;
 
 use color_eyre::eyre::OptionExt;
 use serde_json::{Value, json};
+use utoipa::{
+    Modify, OpenApi,
+    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
+};
 
 use crate::{
     AppView,
     atproto::{NSID_PROFILE, get_record},
 };
+
+#[derive(OpenApi, Debug, Clone, Copy)]
+#[openapi(
+    modifiers(&SecurityAddon),
+    paths(
+        record::create,
+        record::update,
+        repo::profile,
+        repo::login_info,
+        proposal::list,
+        proposal::detail,
+        reply::list,
+        like::list,
+    ),
+    components(schemas(
+        record::NewRecord,
+        proposal::ProposalQuery,
+        reply::ReplyQuery,
+        like::LikeQuery,
+    ))
+)]
+pub struct ApiDoc;
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "Authorization",
+                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("Authorization"))),
+            )
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ToTimestamp;
