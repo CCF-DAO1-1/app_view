@@ -5,7 +5,7 @@ use common_x::restful::{
         extract::{Query, State},
         response::IntoResponse,
     },
-    ok,
+    ok, ok_simple,
 };
 use sea_query::{BinOper, Expr, ExprTrait, Func, Order, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
@@ -138,4 +138,37 @@ pub async fn detail(
     let view = ProposalView::build(row, author);
 
     Ok(ok(view))
+}
+
+#[derive(Debug, Default, Validate, Deserialize, IntoParams)]
+#[serde(default)]
+pub struct StateQuery {
+    #[validate(length(min = 1))]
+    /// record uri
+    pub uri: String,
+    /// proposal state
+    pub state: i32,
+}
+
+#[utoipa::path(post, path = "/api/proposal/update_state", params(StateQuery))]
+pub async fn update_state(
+    State(state): State<AppView>,
+    Query(query): Query<StateQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    query
+        .validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let lines = Proposal::update_state(&state.db, &query.uri, query.state)
+        .await
+        .map_err(|e| {
+            debug!("update_state failed: {e}");
+            AppError::NotFound
+        })?;
+
+    if lines == 0 {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(ok_simple())
 }

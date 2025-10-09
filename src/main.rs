@@ -82,6 +82,10 @@ async fn main() -> Result<()> {
         .route("/api/repo/profile", get(api::repo::profile))
         .route("/api/proposal/list", post(api::proposal::list))
         .route("/api/proposal/detail", get(api::proposal::detail))
+        .route(
+            "/api/proposal/update_state",
+            post(api::proposal::update_state),
+        )
         .route("/api/reply/list", post(api::reply::list))
         .route("/api/like/list", post(api::like::list))
         .layer((TimeoutLayer::new(Duration::from_secs(10)),))

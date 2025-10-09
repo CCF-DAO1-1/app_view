@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local};
 use color_eyre::Result;
-use sea_query::{ColumnDef, Expr, Iden, OnConflict, PostgresQueryBuilder};
+use sea_query::{ColumnDef, Expr, ExprTrait, Iden, OnConflict, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::Serialize;
 use serde_json::Value;
@@ -13,6 +13,7 @@ pub enum Proposal {
     Cid,
     Repo,
     Record,
+    State,
     Updated,
 }
 
@@ -25,6 +26,7 @@ impl Proposal {
             .col(ColumnDef::new(Self::Cid).string().not_null())
             .col(ColumnDef::new(Self::Repo).string().not_null())
             .col(ColumnDef::new(Self::Record).json_binary().default("{}"))
+            .col(ColumnDef::new(Self::State).integer().not_null().default(1))
             .col(
                 ColumnDef::new(Self::Updated)
                     .timestamp_with_time_zone()
@@ -79,6 +81,7 @@ impl Proposal {
             (Proposal::Table, Proposal::Cid),
             (Proposal::Table, Proposal::Repo),
             (Proposal::Table, Proposal::Record),
+            (Proposal::Table, Proposal::State),
             (Proposal::Table, Proposal::Updated),
         ])
         .expr(Expr::cust("(select count(\"like\".\"uri\") from \"like\" where \"like\".\"to\" = \"proposal\".\"uri\") as like_count"))
@@ -90,6 +93,21 @@ impl Proposal {
         .from(Proposal::Table)
         .take()
     }
+
+    pub async fn update_state(db: &Pool<Postgres>, uri: &str, state: i32) -> Result<u64> {
+        let (sql, values) = sea_query::Query::update()
+            .table(Self::Table)
+            .values([
+                (Self::State, state.into()),
+                (Self::Updated, Expr::current_timestamp()),
+            ])
+            .and_where(Expr::col(Self::Uri).eq(uri))
+            .build_sqlx(PostgresQueryBuilder);
+        debug!("update_state exec sql: {sql}");
+
+        let lines = db.execute(query_with(&sql, values)).await?.rows_affected();
+        Ok(lines)
+    }
 }
 
 #[derive(sqlx::FromRow, Debug, Serialize)]
@@ -98,6 +116,7 @@ pub struct ProposalRow {
     pub cid: String,
     pub repo: String,
     pub record: Value,
+    pub state: i32,
     pub updated: DateTime<Local>,
     pub like_count: i64,
     pub liked: bool,
@@ -109,6 +128,7 @@ pub struct ProposalView {
     pub cid: String,
     pub author: Value,
     pub record: Value,
+    pub state: i32,
     pub updated: DateTime<Local>,
     pub like_count: String,
     pub liked: bool,
@@ -122,6 +142,7 @@ impl ProposalView {
             author,
             record: row.record,
             updated: row.updated,
+            state: row.state,
             like_count: row.like_count.to_string(),
             liked: row.liked,
         }

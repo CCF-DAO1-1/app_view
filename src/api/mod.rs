@@ -25,6 +25,7 @@ use crate::{
         repo::profile,
         proposal::list,
         proposal::detail,
+        proposal::update_state,
         reply::list,
         like::list,
     ),

@@ -46,8 +46,7 @@ pub async fn create(
     let record_type = new_record
         .value
         .get("$type")
-        .map(|t| t.as_str())
-        .ok_or_eyre("'$type' must be set")?
+        .and_then(|t| t.as_str())
         .ok_or_eyre("'$type' must be set")?;
     if !state.whitelist.is_empty() && !state.whitelist.contains(&new_record.repo) {
         match record_type {
@@ -107,8 +106,7 @@ pub async fn update(
     let record_type = new_record
         .value
         .get("$type")
-        .map(|t| t.as_str())
-        .ok_or_eyre("'$type' must be set")?
+        .and_then(|t| t.as_str())
         .ok_or_eyre("'$type' must be set")?;
     if !state.whitelist.is_empty() && !state.whitelist.contains(&new_record.repo) {
         match record_type {
