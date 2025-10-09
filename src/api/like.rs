@@ -21,9 +21,13 @@ use crate::{
 #[derive(Debug, Validate, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct LikeQuery {
+    /// filter by user's DID
     pub repo: Option<String>,
+    /// filter by like to (DID)
     pub to: Option<String>,
+    /// pagination cursor (usually timestamp of the last item seen)
     pub cursor: Option<String>,
+    /// number of items to return
     pub limit: u64,
 }
 

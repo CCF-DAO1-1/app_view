@@ -81,7 +81,6 @@ impl Proposal {
             (Proposal::Table, Proposal::Record),
             (Proposal::Table, Proposal::Updated),
         ])
-        .expr(Expr::cust("(select count(\"comment\".\"uri\") from \"comment\" where \"comment\".\"proposal\" = \"proposal\".\"uri\") as comment_count"))
         .expr(Expr::cust("(select count(\"like\".\"uri\") from \"like\" where \"like\".\"to\" = \"proposal\".\"uri\") as like_count"))
         .expr(if let Some(viewer) = viewer {
             Expr::cust(format!("((select count(\"like\".\"uri\") from \"like\" where \"like\".\"repo\" = '{viewer}' and \"like\".\"to\" = \"proposal\".\"uri\" ) > 0) as liked"))
@@ -100,7 +99,6 @@ pub struct ProposalRow {
     pub repo: String,
     pub record: Value,
     pub updated: DateTime<Local>,
-    pub comment_count: i64,
     pub like_count: i64,
     pub liked: bool,
 }
@@ -112,7 +110,6 @@ pub struct ProposalView {
     pub author: Value,
     pub record: Value,
     pub updated: DateTime<Local>,
-    pub comment_count: String,
     pub like_count: String,
     pub liked: bool,
 }
@@ -125,7 +122,6 @@ impl ProposalView {
             author,
             record: row.record,
             updated: row.updated,
-            comment_count: row.comment_count.to_string(),
             like_count: row.like_count.to_string(),
             liked: row.liked,
         }

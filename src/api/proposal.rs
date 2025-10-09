@@ -25,18 +25,21 @@ use crate::{
 #[derive(Debug, Validate, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ProposalQuery {
-    pub section_id: Option<String>,
+    /// pagination cursor (usually timestamp of the last item seen)
     pub cursor: Option<String>,
+    /// number of items to return
     pub limit: u64,
+    /// search keyword
     pub q: Option<String>,
+    /// filter by user's DID
     pub repo: Option<String>,
+    /// viewer's DID
     pub viewer: Option<String>,
 }
 
 impl Default for ProposalQuery {
     fn default() -> Self {
         Self {
-            section_id: Default::default(),
             cursor: Default::default(),
             limit: 20,
             q: Default::default(),
@@ -102,7 +105,9 @@ pub async fn list(
 #[serde(default)]
 pub struct UriQuery {
     #[validate(length(min = 1))]
+    /// record uri
     pub uri: String,
+    /// viewer's DID
     pub viewer: Option<String>,
 }
 

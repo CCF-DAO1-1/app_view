@@ -16,6 +16,7 @@ use crate::{AppView, api::build_author, error::AppError};
 #[serde(default)]
 pub struct RepoQuery {
     #[validate(length(min = 1))]
+    /// user's DID
     pub repo: String,
 }
 

@@ -21,10 +21,18 @@ use crate::{
 #[derive(Debug, Default, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct NewRecord {
+    /// user's DID
     repo: String,
+    /// record rkey (for update, must be the same as the existing record)
     rkey: String,
+    /// record value
+    #[schema(
+        example = "{\"$type\": \"app.dao.proposal\", \"created\": \"2025-09-24T04:41:17Z\", \"text\": \"Hello, world!\"}"
+    )]
     value: Value,
+    /// signing key
     signing_key: String,
+    /// ckb address
     ckb_addr: String,
     root: Value,
 }

@@ -21,10 +21,15 @@ use crate::{
 #[derive(Debug, Validate, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ReplyQuery {
+    /// filter by proposal uri
     pub proposal: String,
+    /// filter by reply to (DID)
     pub to: Option<String>,
+    /// pagination cursor (usually timestamp of the last item seen)
     pub cursor: Option<String>,
+    /// number of items to return
     pub limit: u64,
+    /// viewer's DID
     pub viewer: Option<String>,
 }
 
