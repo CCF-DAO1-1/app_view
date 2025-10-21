@@ -5,6 +5,8 @@ pub mod reply;
 pub mod repo;
 
 use color_eyre::eyre::OptionExt;
+use sea_query::{Expr, ExprTrait, PostgresQueryBuilder};
+use sea_query_sqlx::SqlxBinder;
 use serde_json::{Value, json};
 use utoipa::{
     Modify, OpenApi,
@@ -14,6 +16,7 @@ use utoipa::{
 use crate::{
     AppView,
     atproto::{NSID_PROFILE, get_record},
+    lexicon::profile::{Profile, ProfileRow},
 };
 
 #[derive(OpenApi, Debug, Clone, Copy)]
@@ -61,13 +64,27 @@ impl sea_query::Iden for ToTimestamp {
 }
 
 pub async fn build_author(state: &AppView, repo: &str) -> Value {
-    // Get profile
-    let mut author = get_record(&state.pds, repo, NSID_PROFILE, "self")
+    let (sql, values) = Profile::build_select()
+        .and_where(Expr::col(Profile::Did).eq(repo))
+        .build_sqlx(PostgresQueryBuilder);
+    debug!("build_author exec sql: {sql}");
+    let row: Option<ProfileRow> = sqlx::query_as_with(&sql, values)
+        .fetch_optional(&state.db)
+        .await
+        .unwrap_or(None);
+    let mut author = if let Some(profile) = row {
+        profile.profile
+    } else if let Ok(profile) = get_record(&state.pds, repo, NSID_PROFILE, "self")
         .await
         .and_then(|row| row.get("value").cloned().ok_or_eyre("NOT_FOUND"))
-        .unwrap_or(json!({
+    {
+        Profile::insert(&state.db, repo, profile.clone()).await.ok();
+        profile
+    } else {
+        json!({
             "did": repo
-        }));
+        })
+    };
     author["did"] = Value::String(repo.to_owned());
     author
 }

@@ -8,6 +8,7 @@ use color_eyre::{Result, eyre::eyre};
 use common_x::restful::axum::routing::get;
 use common_x::restful::axum::{Router, routing::post};
 use dao::api::ApiDoc;
+use dao::lexicon::profile::Profile;
 use dao::{AppView, api};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
@@ -51,6 +52,7 @@ async fn main() -> Result<()> {
     Proposal::init(&db).await?;
     Reply::init(&db).await?;
     Like::init(&db).await?;
+    Profile::init(&db).await?;
 
     let dao = AppView {
         db,
