@@ -1,13 +1,19 @@
 [package]
 name = "dao"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 authors = ["JLer <jlerxky@live.com>"]
 
 [dependencies]
 axum-extra = { version = "0.10", features = ["typed-header"] }
+base32 = "0.5"
+blake2b-ref = "0.3.1"
 bs58 = "0.5"
 chrono = { version = "0.4", features = ["serde"] }
+ckb-hash = "0.202"
+ckb-jsonrpc-types = "0.202"
+ckb-sdk = "4.4"
+ckb-types = "0.202"
 clap = { version = "4.5", features = ["derive"] }
 color-eyre = "0.6"
 common_x = { version = "0.8", default-features = false, features = [
@@ -41,8 +47,12 @@ sea-query-sqlx = { version = "0.8.0-rc.9", features = [
 ] }
 serde = "1.0"
 serde_json = "1.0"
+sparse-merkle-tree = { git = "https://github.com/nervosnetwork/sparse-merkle-tree", rev = "9a893a2", default-features = false, features = [
+    "with-blake2b-ref",
+] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
 tokio = { version = "1", features = ["full"] }
+tokio-cron-scheduler = "0.15"
 tower-http = { version = "0.6", features = ["fs", "cors", "trace", "timeout"] }
 tracing = "0.1"
 utoipa = { version = "5.4", features = ["axum_extras"] }
@@ -55,21 +65,13 @@ missing_const_for_fn = "warn"
 [lints.rust]
 unsafe_code = "forbid"
 missing_copy_implementations = "warn"
-missing_debug_implementations = "warn"
+# missing_debug_implementations = "warn"
 # unused_crate_dependencies = "warn"
 unused_extern_crates = "warn"
 
 [profile.dev]
 debug = true
 opt-level = 0
-
-[profile.fast]
-inherits = "release"
-opt-level = 3
-debug = true
-debug-assertions = true
-overflow-checks = true
-lto = false
 
 [profile.release]
 debug = false

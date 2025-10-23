@@ -3,13 +3,15 @@ extern crate tracing as logger;
 
 use std::time::Duration;
 
+use ckb_sdk::CkbRpcAsyncClient;
 use clap::Parser;
 use color_eyre::{Result, eyre::eyre};
 use common_x::restful::axum::routing::get;
 use common_x::restful::axum::{Router, routing::post};
 use dao::api::ApiDoc;
 use dao::lexicon::profile::Profile;
-use dao::{AppView, api};
+use dao::lexicon::vote_whitelist::VoteWhitelist;
+use dao::{AppView, api, scheduler};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
 use tower_http::timeout::TimeoutLayer;
@@ -28,7 +30,11 @@ pub struct Args {
     #[clap(long, default_value = "8080")]
     port: u16,
     #[clap(short, long)]
+    ckb_url: String,
+    #[clap(short, long)]
     db_url: String,
+    #[clap(short, long)]
+    indexer_url: String,
     #[clap(short, long)]
     pds: String,
     #[clap(short, long, default_value = "")]
@@ -53,10 +59,15 @@ async fn main() -> Result<()> {
     Reply::init(&db).await?;
     Like::init(&db).await?;
     Profile::init(&db).await?;
+    VoteWhitelist::init(&db).await?;
 
-    let dao = AppView {
+    let ckb_client = CkbRpcAsyncClient::new(&args.ckb_url);
+
+    let app = AppView {
         db,
         pds: args.pds.clone(),
+        indexer_url: args.indexer_url.clone(),
+        ckb_client,
         whitelist: args
             .whitelist
             .split(',')
@@ -69,6 +80,8 @@ async fn main() -> Result<()> {
             })
             .collect(),
     };
+
+    scheduler::init_task_scheduler(&app).await?;
 
     let router = if args.apidoc {
         Router::new()
@@ -90,9 +103,12 @@ async fn main() -> Result<()> {
         )
         .route("/api/reply/list", post(api::reply::list))
         .route("/api/like/list", post(api::like::list))
+        .route("/api/vote/weight", get(api::vote::weight))
+        .route("/api/vote/whitelist", get(api::vote::whitelist))
+        .route("/api/vote/proof", get(api::vote::proof))
         .layer((TimeoutLayer::new(Duration::from_secs(10)),))
         .layer(CorsLayer::permissive())
-        .with_state(dao);
+        .with_state(app);
     common_x::restful::http_serve(args.port, router)
         .await
         .map_err(|e| eyre!("{e}"))

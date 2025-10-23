@@ -34,7 +34,7 @@ impl IntoResponse for AppError {
             ),
             AppError::Unknown(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "Unknown",
+                "ServerError",
                 string_to_static_str(msg),
             ),
         };

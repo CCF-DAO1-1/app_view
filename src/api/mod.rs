@@ -3,6 +3,7 @@ pub mod proposal;
 pub mod record;
 pub mod reply;
 pub mod repo;
+pub mod vote;
 
 use color_eyre::eyre::OptionExt;
 use sea_query::{Expr, ExprTrait, PostgresQueryBuilder};
@@ -31,6 +32,9 @@ use crate::{
         proposal::update_state,
         reply::list,
         like::list,
+        vote::weight,
+        vote::whitelist,
+        vote::proof,
     ),
     components(schemas(
         record::NewRecord,
