@@ -84,7 +84,7 @@ pub async fn build_vote_whitelist(
         if let Ok(ckb_addr) = ckb::get_ckb_addr_by_did(&ckb_client, &did).await
             && let Ok(deposit) = ckb::get_nervos_dao_deposit(&ckb_client, &ckb_addr).await
         {
-            if deposit >= 100_000 {
+            if deposit > 0 {
                 info!(
                     "DID: {} with CKB address: {} has deposit: {} shannons, added to vote whitelist",
                     did, ckb_addr, deposit
