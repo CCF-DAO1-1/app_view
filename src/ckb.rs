@@ -71,7 +71,7 @@ pub async fn get_ckb_addr_by_did(ckb_client: &CkbRpcAsyncClient, did: &str) -> R
                     hash_type: ckb_jsonrpc_types::ScriptHashType::Type,
                     args: ckb_jsonrpc_types::JsonBytes::from_vec(
                         base32::decode(base32::Alphabet::Rfc4648Lower { padding: false }, did)
-                            .unwrap(),
+                            .ok_or_eyre("did format is invalid")?,
                     ),
                 },
                 script_type: ckb_sdk::rpc::ckb_indexer::ScriptType::Type,

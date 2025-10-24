@@ -106,6 +106,7 @@ async fn main() -> Result<()> {
         .route("/api/vote/weight", get(api::vote::weight))
         .route("/api/vote/whitelist", get(api::vote::whitelist))
         .route("/api/vote/proof", get(api::vote::proof))
+        .route("/api/vote/build_whitelist", get(api::vote::build_whitelist))
         .layer((TimeoutLayer::new(Duration::from_secs(10)),))
         .layer(CorsLayer::permissive())
         .with_state(app);

@@ -150,7 +150,12 @@ pub struct StateQuery {
     pub state: i32,
 }
 
-#[utoipa::path(post, path = "/api/proposal/update_state", params(StateQuery))]
+#[utoipa::path(
+    post,
+    path = "/api/proposal/update_state",
+    params(StateQuery),
+    description = "方便调试用的，请勿随意调用"
+)]
 pub async fn update_state(
     State(state): State<AppView>,
     Query(query): Query<StateQuery>,

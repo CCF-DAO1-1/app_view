@@ -35,6 +35,7 @@ use crate::{
         vote::weight,
         vote::whitelist,
         vote::proof,
+        vote::build_whitelist,
     ),
     components(schemas(
         record::NewRecord,
