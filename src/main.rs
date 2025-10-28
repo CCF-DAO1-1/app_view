@@ -34,7 +34,9 @@ pub struct Args {
     #[clap(short, long)]
     db_url: String,
     #[clap(short, long)]
-    indexer_url: String,
+    indexer_bind_url: String,
+    #[clap(short, long)]
+    indexer_did_url: String,
     #[clap(short, long)]
     pds: String,
     #[clap(short, long, default_value = "")]
@@ -66,7 +68,8 @@ async fn main() -> Result<()> {
     let app = AppView {
         db,
         pds: args.pds.clone(),
-        indexer_url: args.indexer_url.clone(),
+        indexer_bind_url: args.indexer_bind_url.clone(),
+        indexer_did_url: args.indexer_did_url.clone(),
         ckb_client,
         whitelist: args
             .whitelist
@@ -107,6 +110,10 @@ async fn main() -> Result<()> {
         .route("/api/vote/whitelist", get(api::vote::whitelist))
         .route("/api/vote/proof", get(api::vote::proof))
         .route("/api/vote/build_whitelist", get(api::vote::build_whitelist))
+        .route(
+            "/api/vote/create_vote_meta",
+            post(api::vote::create_vote_meta),
+        )
         .layer((TimeoutLayer::new(Duration::from_secs(10)),))
         .layer(CorsLayer::permissive())
         .with_state(app);

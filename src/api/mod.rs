@@ -36,12 +36,15 @@ use crate::{
         vote::whitelist,
         vote::proof,
         vote::build_whitelist,
+        vote::create_vote_meta,
     ),
     components(schemas(
         record::NewRecord,
         proposal::ProposalQuery,
         reply::ReplyQuery,
         like::LikeQuery,
+        vote::CreateVoteMetaBody,
+        vote::CreateVoteMetaParams
     ))
 )]
 pub struct ApiDoc;

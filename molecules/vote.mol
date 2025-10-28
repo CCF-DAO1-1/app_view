@@ -1,0 +1,21 @@
+array Uint64 [byte; 8];
+
+vector Bytes <byte>;
+option BytesOpt (Bytes);
+
+vector String <byte>;
+option StringOpt (String);
+vector StringVec <String>;
+
+table VoteMeta {
+    smt_root_hash: BytesOpt,
+    candidates: StringVec,
+    start_time: Uint64,
+    end_time: Uint64,
+    extra: BytesOpt,
+}
+
+table VoteProof {
+    lock_script_hash: Bytes,
+    smt_proof: Bytes,
+}

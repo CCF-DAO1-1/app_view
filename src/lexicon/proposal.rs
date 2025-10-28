@@ -111,6 +111,16 @@ impl Proposal {
 }
 
 #[derive(sqlx::FromRow, Debug, Serialize)]
+pub struct ProposalSample {
+    pub uri: String,
+    pub cid: String,
+    pub repo: String,
+    pub record: Value,
+    pub state: i32,
+    pub updated: DateTime<Local>,
+}
+
+#[derive(sqlx::FromRow, Debug, Serialize)]
 pub struct ProposalRow {
     pub uri: String,
     pub cid: String,

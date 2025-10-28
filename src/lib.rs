@@ -8,8 +8,10 @@ pub mod api;
 pub mod atproto;
 pub mod ckb;
 pub mod error;
-pub mod indexer;
+pub mod indexer_bind;
+pub mod indexer_did;
 pub mod lexicon;
+pub mod molecules;
 pub mod scheduler;
 pub mod smt;
 pub mod tid;
@@ -21,7 +23,8 @@ extern crate tracing as logger;
 pub struct AppView {
     pub db: sqlx::Pool<sqlx::Postgres>,
     pub pds: String,
-    pub indexer_url: String,
+    pub indexer_bind_url: String,
+    pub indexer_did_url: String,
     pub ckb_client: ckb_sdk::CkbRpcAsyncClient,
     pub whitelist: Vec<String>,
 }

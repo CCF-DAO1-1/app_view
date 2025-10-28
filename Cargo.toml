@@ -22,6 +22,9 @@ common_x = { version = "0.8", default-features = false, features = [
 ] }
 hex = "0.4"
 k256 = "0.13"
+molecule = { version = "0.9", default-features = false, features = [
+    "bytes_vec",
+] }
 rand = "0.9"
 reqwest = { version = "0.12", features = ["json"] }
 sea-query = { version = "1.0.0-rc.14", default-features = false, features = [
@@ -47,6 +50,7 @@ sea-query-sqlx = { version = "0.8.0-rc.9", features = [
 ] }
 serde = "1.0"
 serde_json = "1.0"
+serde_ipld_dagcbor = { version = "0.6", features = ["codec"] }
 sparse-merkle-tree = { git = "https://github.com/nervosnetwork/sparse-merkle-tree", rev = "9a893a2", default-features = false, features = [
     "with-blake2b-ref",
 ] }
@@ -64,7 +68,7 @@ missing_const_for_fn = "warn"
 
 [lints.rust]
 unsafe_code = "forbid"
-missing_copy_implementations = "warn"
+# missing_copy_implementations = "warn"
 # missing_debug_implementations = "warn"
 # unused_crate_dependencies = "warn"
 unused_extern_crates = "warn"

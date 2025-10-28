@@ -1,3 +1,4 @@
+pub mod administrator;
 pub mod like;
 pub mod profile;
 pub mod proposal;
