@@ -24,14 +24,16 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    ckb::get_nervos_dao_deposit,
+    ckb::{get_ckb_addr_by_did, get_nervos_dao_deposit},
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
         proposal::{Proposal, ProposalSample},
+        vote::{Vote, VoteRow},
+        vote_meta::{VoteMeta, VoteMetaRow},
         vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
-    molecules,
+    molecules::{self, VoteProof},
     smt::{Blake2bHasher, CkbSMT, SMT_VALUE},
 };
 
@@ -40,6 +42,40 @@ use crate::{
 pub struct CkbAddrQuery {
     #[validate(length(min = 1))]
     pub ckb_addr: String,
+}
+
+#[derive(Debug, Default, Validate, Deserialize, IntoParams)]
+#[serde(default)]
+pub struct DidQuery {
+    #[validate(length(min = 1))]
+    pub did: String,
+}
+
+#[utoipa::path(get, path = "/api/vote/bind_list", params(DidQuery))]
+pub async fn bind_list(
+    State(state): State<AppView>,
+    Query(query): Query<DidQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    query
+        .validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let ckb_addr = crate::ckb::get_ckb_addr_by_did(
+        &state.ckb_client,
+        query
+            .did
+            .strip_prefix("did:web5")
+            .unwrap_or(&query.did)
+            .strip_prefix("did:ckb")
+            .unwrap_or(&query.did)
+            .strip_prefix("did:plc")
+            .unwrap_or(&query.did),
+    )
+    .await?;
+
+    let from_list = crate::indexer_bind::query_by_to(&state.indexer_bind_url, &ckb_addr).await?;
+
+    Ok(ok(from_list))
 }
 
 #[utoipa::path(get, path = "/api/vote/weight", params(CkbAddrQuery))]
@@ -104,8 +140,24 @@ pub async fn proof(
     State(state): State<AppView>,
     Query(query): Query<ProofQuery>,
 ) -> Result<impl IntoResponse, AppError> {
+    get_proof(&state, &query.whitelist_id, &query.ckb_addr)
+        .await
+        .map(|r| {
+            ok(json!({
+                "smt_root_hash": hex::encode(r.0),
+                "smt_proof": hex::encode(r.1),
+            }))
+        })
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))
+}
+
+async fn get_proof(
+    state: &AppView,
+    whitelist_id: &str,
+    ckb_addr: &str,
+) -> Result<(Vec<u8>, Vec<u8>)> {
     let (sql, values) = VoteWhitelist::build_select()
-        .and_where(Expr::col(VoteWhitelist::Id).eq(query.whitelist_id))
+        .and_where(Expr::col(VoteWhitelist::Id).eq(whitelist_id))
         .build_sqlx(PostgresQueryBuilder);
 
     debug!("sql: {sql} ({values:?})");
@@ -113,10 +165,7 @@ pub async fn proof(
     let row: VoteWhitelistRow = query_as_with(&sql, values.clone())
         .fetch_one(&state.db)
         .await
-        .map_err(|e| {
-            debug!("exec sql failed: {e}");
-            AppError::NotFound
-        })?;
+        .map_err(|e| eyre!(e))?;
 
     let mut smt_tree = CkbSMT::default();
     for lock_hash in row.list.iter() {
@@ -130,12 +179,11 @@ pub async fn proof(
     }
 
     let smt_root_hash: H256 = *smt_tree.root();
-    let smt_root_hash_hex = hex::encode(smt_root_hash.as_slice());
 
     let address = crate::AddressParser::default()
         .set_network(ckb_sdk::NetworkType::Testnet)
-        .parse(&query.ckb_addr)
-        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+        .parse(ckb_addr)
+        .map_err(|e| eyre!(e))?;
     let lock_script = ckb_types::packed::Script::from(address.payload());
     let lock_hash = lock_script.calc_script_hash();
     let key: [u8; 32] = lock_hash.raw_data().to_vec().as_slice().try_into()?;
@@ -152,14 +200,10 @@ pub async fn proof(
     let ret = compiled_proof
         .verify::<Blake2bHasher>(&smt_root_hash, vec![(key.into(), SMT_VALUE.into())])
         .unwrap_or(false);
-
     if ret {
-        Ok(ok(json!({
-            "proof": hex::encode(&compiled_proof.0),
-            "root_hash": smt_root_hash_hex,
-        })))
+        Ok((smt_root_hash.as_slice().to_vec(), compiled_proof.0))
     } else {
-        Err(AppError::ValidateFailed("Not in smt".to_string()))
+        Err(eyre!("Not in smt"))
     }
 }
 
@@ -241,14 +285,105 @@ pub async fn create_vote_meta(
         .map_err(|e| AppError::ValidateFailed(format!("proposal not found: {e}")))?;
     let proposal_hash = ckb_hash::blake2b_256(serde_json::to_vec(&proposal_sample)?);
 
-    let whitelist_id = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let (sql, values) = VoteWhitelist::build_select()
-        .and_where(Expr::col(VoteWhitelist::Id).eq(whitelist_id))
+    let (sql, value) = VoteMeta::build_select()
+        .and_where(Expr::col(VoteMeta::ProposalUri).eq(body.params.proposal_uri.clone()))
+        .and_where(Expr::col(VoteMeta::State).eq(0))
         .build_sqlx(PostgresQueryBuilder);
+    let vote_meta_row = if let Ok(vote_meta_row) = query_as_with::<_, VoteMetaRow, _>(&sql, value)
+        .fetch_one(&state.db)
+        .await
+    {
+        vote_meta_row
+    } else {
+        let mut vote_meta_row = VoteMetaRow {
+            id: -1,
+            state: 0,
+            tx_hash: None,
+            proposal_uri: body.params.proposal_uri.clone(),
+            whitelist_id: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+            candidates: body.params.candidates.clone(),
+            start_time: chrono::DateTime::from_timestamp(body.params.start_time as i64, 0)
+                .unwrap_or(chrono::Local::now().to_utc())
+                .into(),
+            end_time: chrono::DateTime::from_timestamp(body.params.end_time as i64, 0)
+                .unwrap_or(
+                    chrono::Local::now()
+                        .checked_add_months(chrono::Months::new(1))
+                        .unwrap()
+                        .to_utc(),
+                )
+                .into(),
+            created: chrono::Local::now(),
+        };
 
-    debug!("sql: {sql} ({values:?})");
+        vote_meta_row.id = VoteMeta::insert(&state.db, &vote_meta_row).await?;
+        vote_meta_row
+    };
 
-    let row: VoteWhitelistRow = query_as_with(&sql, values.clone())
+    let vote_meta = build_vote_meta(&state, &vote_meta_row, &proposal_hash).await?;
+
+    let vote_meta_bytes = vote_meta.as_bytes().to_vec();
+    let vote_meta_hex = hex::encode(vote_meta_bytes);
+
+    let outputs_data = vec![vote_meta_hex];
+
+    Ok(ok(json!({
+        "vote_meta": vote_meta_row,
+        "outputsData": outputs_data
+    })))
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct UpdateTxParams {
+    pub id: i32,
+    pub tx_hash: String,
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct UpdateTxBody {
+    pub params: UpdateTxParams,
+    pub did: String,
+    #[validate(length(equal = 57))]
+    pub signing_key_did: String,
+    pub signed_bytes: String,
+}
+
+#[utoipa::path(post, path = "/api/vote/update_meta_tx_hash")]
+pub async fn update_meta_tx_hash(
+    State(state): State<AppView>,
+    Json(body): Json<UpdateTxBody>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    verify_signature(
+        &body.did,
+        &state.indexer_did_url,
+        &body.signing_key_did,
+        &body.signed_bytes,
+        &body.params,
+    )
+    .await
+    .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    VoteMeta::update_tx_hash(&state.db, body.params.id, &body.params.tx_hash)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("update vote_meta tx_hash failed: {e}")))?;
+
+    let (sql, value) = VoteMeta::build_select()
+        .and_where(Expr::col(VoteMeta::Id).eq(body.params.id))
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_meta_row: VoteMetaRow = query_as_with(&sql, value)
         .fetch_one(&state.db)
         .await
         .map_err(|e| {
@@ -256,57 +391,137 @@ pub async fn create_vote_meta(
             AppError::NotFound
         })?;
 
-    let mut smt_tree = CkbSMT::default();
-    for lock_hash in row.list.iter() {
-        if let Ok(lock_hash) = hex::decode(lock_hash)
-            && let Ok(key) = TryInto::<[u8; 32]>::try_into(lock_hash.as_slice())
-        {
-            smt_tree
-                .update(key.into(), crate::smt::SMT_VALUE.into())
-                .ok();
-        }
-    }
+    Ok(ok(vote_meta_row))
+}
 
-    let vote_meta = molecules::VoteMeta::new_builder()
-        .candidates(molecules::StringVec::from(
-            body.params
-                .candidates
-                .iter()
-                .map(|c| molecules::String::from(c.as_bytes().to_vec()))
-                .collect::<Vec<molecules::String>>(),
-        ))
-        .smt_root_hash(
-            molecules::BytesOpt::new_builder()
-                .set(Some(smt_tree.root().as_slice().to_vec().into()))
-                .build(),
-        )
-        .start_time(
-            molecules::Uint64::new_builder()
-                .set::<[molecule::prelude::Byte; 8]>(
-                    body.params.start_time.to_be_bytes().map(|b| b.into()),
-                )
-                .build(),
-        )
-        .end_time(
-            molecules::Uint64::new_builder()
-                .set::<[molecule::prelude::Byte; 8]>(
-                    body.params.end_time.to_be_bytes().map(|b| b.into()),
-                )
-                .build(),
-        )
-        .extra(
-            molecules::BytesOpt::new_builder()
-                .set(Some(proposal_hash.to_vec().into()))
-                .build(),
-        )
+#[utoipa::path(post, path = "/api/vote/update_vote_tx_hash")]
+pub async fn update_vote_tx_hash(
+    State(state): State<AppView>,
+    Json(body): Json<UpdateTxBody>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    verify_signature(
+        &body.did,
+        &state.indexer_did_url,
+        &body.signing_key_did,
+        &body.signed_bytes,
+        &body.params,
+    )
+    .await
+    .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    Vote::update_tx_hash(&state.db, body.params.id, &body.params.tx_hash)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("update vote tx_hash failed: {e}")))?;
+
+    let (sql, value) = Vote::build_select()
+        .and_where(Expr::col(Vote::Id).eq(body.params.id))
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_row: VoteRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| {
+            debug!("exec sql failed: {e}");
+            AppError::NotFound
+        })?;
+
+    Ok(ok(vote_row))
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct CreateVoteParams {
+    pub vote_meta_id: i32,
+    pub candidates_index: i32,
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct CreateVoteBody {
+    pub params: CreateVoteParams,
+    pub did: String,
+    #[validate(length(equal = 57))]
+    pub signing_key_did: String,
+    pub signed_bytes: String,
+}
+
+#[utoipa::path(post, path = "/api/vote/create_vote")]
+pub async fn create_vote(
+    State(state): State<AppView>,
+    Json(body): Json<CreateVoteBody>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    verify_signature(
+        &body.did,
+        &state.indexer_did_url,
+        &body.signing_key_did,
+        &body.signed_bytes,
+        &body.params,
+    )
+    .await
+    .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let mut vote_row = VoteRow {
+        id: -1,
+        state: 0,
+        tx_hash: None,
+        vote_meta_id: body.params.vote_meta_id,
+        candidates_index: body.params.candidates_index,
+        voter: body.did.clone(),
+        created: chrono::Local::now(),
+    };
+    vote_row.id = Vote::insert(&state.db, &vote_row).await?;
+
+    let (sql, value) = VoteMeta::build_select()
+        .and_where(Expr::col(VoteMeta::Id).eq(body.params.vote_meta_id))
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_meta_row: VoteMetaRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not vote_meta: {e}")))?;
+
+    // TODO build vote row tx
+    let vote_addr = get_ckb_addr_by_did(&state.ckb_client, &body.did).await?;
+    let address = crate::AddressParser::default()
+        .set_network(ckb_sdk::NetworkType::Testnet)
+        .parse(&vote_addr)
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+    let lock_script = ckb_types::packed::Script::from(address.payload());
+    let proof = get_proof(&state, &vote_meta_row.whitelist_id, &vote_addr).await?;
+
+    let vote_proof = VoteProof::new_builder()
+        .lock_script_hash::<Vec<u8>>(lock_script.calc_script_hash().raw_data().to_vec())
+        .smt_proof::<Vec<u8>>(proof.1)
         .build();
 
-    let vote_meta_bytes = vote_meta.as_bytes().to_vec();
-    let vote_meta_hex = hex::encode(vote_meta_bytes);
-
-    let outputs_data = vec![vote_meta_hex];
-
-    Ok(ok(json!({ "outputsData": outputs_data })))
+    Ok(ok(json!({
+        "row_tx": {
+            "cellDeps": [],
+            "outputs": [],
+            "outputsData": [],
+            "witnesses": [],
+        }
+    })))
 }
 
 async fn verify_signature<T>(
@@ -349,4 +564,86 @@ where
     verifying_key
         .verify(&unsigned_bytes, &signature)
         .map_err(|e| eyre!("verify signature failed: {e}"))
+}
+
+#[test]
+fn test_unsigned_bytes() {
+    let msg = CreateVoteMetaParams {
+        proposal_uri: "".to_string(),
+        candidates: vec![],
+        start_time: 1,
+        end_time: 1,
+    };
+    let unsigned_bytes = serde_ipld_dagcbor::to_vec(&msg).unwrap();
+    println!("unsigned_bytes: {:?}", unsigned_bytes);
+    println!("unsigned_bytes: {}", hex::encode(&unsigned_bytes));
+}
+
+async fn build_vote_meta(
+    state: &AppView,
+    vote_meta_row: &VoteMetaRow,
+    proposal_hash: &[u8],
+) -> Result<molecules::VoteMeta> {
+    let (sql, values) = VoteWhitelist::build_select()
+        .and_where(Expr::col(VoteWhitelist::Id).eq(vote_meta_row.whitelist_id.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+
+    debug!("sql: {sql} ({values:?})");
+
+    let vote_whitelist_row: VoteWhitelistRow = query_as_with(&sql, values.clone())
+        .fetch_one(&state.db)
+        .await?;
+
+    let mut smt_tree = CkbSMT::default();
+    for lock_hash in vote_whitelist_row.list.iter() {
+        if let Ok(lock_hash) = hex::decode(lock_hash)
+            && let Ok(key) = TryInto::<[u8; 32]>::try_into(lock_hash.as_slice())
+        {
+            smt_tree
+                .update(key.into(), crate::smt::SMT_VALUE.into())
+                .ok();
+        }
+    }
+
+    Ok(molecules::VoteMeta::new_builder()
+        .candidates(molecules::StringVec::from(
+            vote_meta_row
+                .candidates
+                .iter()
+                .map(|c| molecules::String::from(c.as_bytes().to_vec()))
+                .collect::<Vec<molecules::String>>(),
+        ))
+        .smt_root_hash(
+            molecules::BytesOpt::new_builder()
+                .set(Some(smt_tree.root().as_slice().to_vec().into()))
+                .build(),
+        )
+        .start_time(
+            molecules::Uint64::new_builder()
+                .set::<[molecule::prelude::Byte; 8]>(
+                    vote_meta_row
+                        .start_time
+                        .timestamp()
+                        .to_be_bytes()
+                        .map(|b| b.into()),
+                )
+                .build(),
+        )
+        .end_time(
+            molecules::Uint64::new_builder()
+                .set::<[molecule::prelude::Byte; 8]>(
+                    vote_meta_row
+                        .end_time
+                        .timestamp()
+                        .to_be_bytes()
+                        .map(|b| b.into()),
+                )
+                .build(),
+        )
+        .extra(
+            molecules::BytesOpt::new_builder()
+                .set(Some(proposal_hash.to_vec().into()))
+                .build(),
+        )
+        .build())
 }

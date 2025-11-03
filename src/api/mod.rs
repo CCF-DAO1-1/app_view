@@ -32,11 +32,15 @@ use crate::{
         proposal::update_state,
         reply::list,
         like::list,
+        vote::bind_list,
         vote::weight,
         vote::whitelist,
         vote::proof,
         vote::build_whitelist,
         vote::create_vote_meta,
+        vote::update_meta_tx_hash,
+        vote::create_vote,
+        vote::update_vote_tx_hash,
     ),
     components(schemas(
         record::NewRecord,
@@ -44,7 +48,11 @@ use crate::{
         reply::ReplyQuery,
         like::LikeQuery,
         vote::CreateVoteMetaBody,
-        vote::CreateVoteMetaParams
+        vote::CreateVoteMetaParams,
+        vote::CreateVoteBody,
+        vote::CreateVoteParams,
+        vote::UpdateTxBody,
+        vote::UpdateTxParams,
     ))
 )]
 pub struct ApiDoc;
@@ -94,5 +102,18 @@ pub async fn build_author(state: &AppView, repo: &str) -> Value {
         })
     };
     author["did"] = Value::String(repo.to_owned());
+    if let Ok(ckb_addr) = crate::ckb::get_ckb_addr_by_did(
+        &state.ckb_client,
+        repo.strip_prefix("did:web5")
+            .unwrap_or(repo)
+            .strip_prefix("did:ckb")
+            .unwrap_or(repo)
+            .strip_prefix("did:plc")
+            .unwrap_or(repo),
+    )
+    .await
+    {
+        author["ckb_addr"] = Value::String(ckb_addr);
+    }
     author
 }

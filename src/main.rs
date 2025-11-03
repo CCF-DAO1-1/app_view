@@ -9,7 +9,10 @@ use color_eyre::{Result, eyre::eyre};
 use common_x::restful::axum::routing::get;
 use common_x::restful::axum::{Router, routing::post};
 use dao::api::ApiDoc;
+use dao::lexicon::administrator::Administrator;
 use dao::lexicon::profile::Profile;
+use dao::lexicon::vote::Vote;
+use dao::lexicon::vote_meta::VoteMeta;
 use dao::lexicon::vote_whitelist::VoteWhitelist;
 use dao::{AppView, api, scheduler};
 use sqlx::postgres::PgPoolOptions;
@@ -62,6 +65,9 @@ async fn main() -> Result<()> {
     Like::init(&db).await?;
     Profile::init(&db).await?;
     VoteWhitelist::init(&db).await?;
+    Administrator::init(&db).await?;
+    VoteMeta::init(&db).await?;
+    Vote::init(&db).await?;
 
     let ckb_client = CkbRpcAsyncClient::new(&args.ckb_url);
 
@@ -106,6 +112,7 @@ async fn main() -> Result<()> {
         )
         .route("/api/reply/list", post(api::reply::list))
         .route("/api/like/list", post(api::like::list))
+        .route("/api/vote/bind_list", get(api::vote::bind_list))
         .route("/api/vote/weight", get(api::vote::weight))
         .route("/api/vote/whitelist", get(api::vote::whitelist))
         .route("/api/vote/proof", get(api::vote::proof))
@@ -113,6 +120,15 @@ async fn main() -> Result<()> {
         .route(
             "/api/vote/create_vote_meta",
             post(api::vote::create_vote_meta),
+        )
+        .route(
+            "/api/vote/update_meta_tx_hash",
+            post(api::vote::update_meta_tx_hash),
+        )
+        .route("/api/vote/create_vote", post(api::vote::create_vote))
+        .route(
+            "/api/vote/update_vote_tx_hash",
+            post(api::vote::update_vote_tx_hash),
         )
         .layer((TimeoutLayer::new(Duration::from_secs(10)),))
         .layer(CorsLayer::permissive())

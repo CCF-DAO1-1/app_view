@@ -22,3 +22,20 @@ pub async fn query_by_to(url: &str, to: &str) -> Result<Value> {
                 .ok_or_eyre("missing data field in indexer response")
         })?
 }
+
+pub async fn query_by_from(url: &str, from: &str) -> Result<Value> {
+    reqwest::Client::new()
+        .get(format!("{url}/by_from/{from}"))
+        .header("Content-Type", "application/json; charset=utf-8")
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .map_err(|e| eyre!("call indexer failed: {e}"))?
+        .json::<Value>()
+        .await
+        .map(|r| {
+            r.pointer("/data")
+                .cloned()
+                .ok_or_eyre("missing data field in indexer response")
+        })?
+}
