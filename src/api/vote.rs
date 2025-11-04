@@ -333,6 +333,14 @@ pub async fn create_vote_meta(
     })))
 }
 
+#[test]
+fn test() {
+    let hex = "89000000180000003c000000550000005d0000006500000020000000c11b4ffff3879b547f6875594ad60efa73422caa470bf46181dd558c48f6c4ea190000000c0000001300000003000000796573020000006e6f000000006908753c00000000690c69bc20000000953dc36641f25d4ca206f8464a53242d2cbdcac72ef2b0eb87ccdb95aa93c8b9";
+    let bs = hex::decode(hex).unwrap();
+    let vm = molecules::VoteMeta::from_slice(&bs).unwrap();
+    println!("vm: {}", vm);
+}
+
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
 #[serde(default)]
 pub struct UpdateTxParams {
@@ -605,6 +613,9 @@ async fn build_vote_meta(
         }
     }
 
+    let smt_root = smt_tree.root().as_slice();
+    let smt_root_hash: [u8; 32] = smt_root.try_into()?;
+
     Ok(molecules::VoteMeta::new_builder()
         .candidates(molecules::StringVec::from(
             vote_meta_row
@@ -614,8 +625,8 @@ async fn build_vote_meta(
                 .collect::<Vec<molecules::String>>(),
         ))
         .smt_root_hash(
-            molecules::BytesOpt::new_builder()
-                .set(Some(smt_tree.root().as_slice().to_vec().into()))
+            molecules::Bytes32Opt::new_builder()
+                .set(Some(smt_root_hash.into()))
                 .build(),
         )
         .start_time(

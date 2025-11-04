@@ -1,14 +1,16 @@
 array Uint64 [byte; 8];
 
 vector Bytes <byte>;
+array Bytes32 [byte; 32];
 option BytesOpt (Bytes);
+option Bytes32Opt (Bytes32);
 
 vector String <byte>;
 option StringOpt (String);
 vector StringVec <String>;
 
 table VoteMeta {
-    smt_root_hash: BytesOpt,
+    smt_root_hash: Bytes32Opt,
     candidates: StringVec,
     start_time: Uint64,
     end_time: Uint64,
