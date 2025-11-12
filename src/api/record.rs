@@ -143,8 +143,7 @@ pub async fn update(
         .ok_or(AppError::CallPdsFailed(result.to_string()))?;
     match record_type {
         NSID_PROPOSAL => {
-            // TODO check state is draft
-            Proposal::insert(&state.db, &new_record.repo, new_record.value, uri, cid).await?;
+            Proposal::update(&state.db, new_record.value, uri, cid).await?;
         }
         NSID_REPLY => {
             Reply::insert(&state.db, &new_record.repo, &new_record.value, uri, cid).await?;

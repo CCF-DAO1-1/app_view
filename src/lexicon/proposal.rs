@@ -1,10 +1,10 @@
 use chrono::{DateTime, Local};
-use color_eyre::Result;
+use color_eyre::{Result, eyre::eyre};
 use sea_query::{ColumnDef, Expr, ExprTrait, Iden, OnConflict, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::{Executor, Pool, Postgres, query, query_with};
+use sqlx::{Executor, Pool, Postgres, query, query_as_with, query_with};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProposalState {
@@ -74,6 +74,33 @@ impl Proposal {
                     .update_columns([Self::Cid, Self::Repo, Self::Record, Self::Updated])
                     .to_owned(),
             )
+            .build_sqlx(PostgresQueryBuilder);
+
+        db.execute(query_with(&sql, values)).await?;
+        Ok(())
+    }
+
+    pub async fn update(db: &Pool<Postgres>, record: Value, uri: &str, cid: &str) -> Result<()> {
+        let (sql, values) = Proposal::build_select(None)
+            .and_where(Expr::col(Proposal::Uri).eq(uri))
+            .build_sqlx(PostgresQueryBuilder);
+
+        let proposal_row: ProposalRow = query_as_with(&sql, values.clone()).fetch_one(db).await?;
+
+        // check proposal state
+        if proposal_row.state != ProposalState::Draft as i32 {
+            return Err(eyre!("proposal state not draft".to_string(),));
+        }
+
+        let (sql, values) = sea_query::Query::update()
+            .table(Self::Table)
+            .values([
+                (Self::Cid, cid.into()),
+                (Self::Record, record.into()),
+                (Self::Updated, Expr::current_timestamp()),
+            ])
+            .and_where(Expr::col(Self::Uri).eq(uri))
+            .returning_col(Self::Uri)
             .build_sqlx(PostgresQueryBuilder);
 
         db.execute(query_with(&sql, values)).await?;
