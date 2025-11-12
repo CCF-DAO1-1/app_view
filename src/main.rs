@@ -110,6 +110,10 @@ async fn main() -> Result<()> {
             "/api/proposal/update_state",
             post(api::proposal::update_state),
         )
+        .route(
+            "/api/proposal/initiation_vote",
+            post(api::proposal::initiation_vote),
+        )
         .route("/api/reply/list", post(api::reply::list))
         .route("/api/like/list", post(api::like::list))
         .route("/api/vote/bind_list", get(api::vote::bind_list))

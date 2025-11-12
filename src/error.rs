@@ -10,6 +10,7 @@ use serde_json::json;
 pub enum AppError {
     ValidateFailed(String),
     NotFound,
+    ExecSqlFailed(String),
     CallPdsFailed(String),
     Unknown(String),
 }
@@ -26,6 +27,11 @@ impl IntoResponse for AppError {
                 StatusCode::NOT_FOUND,
                 "NotFound",
                 string_to_static_str("NOT_FOUND".to_owned()),
+            ),
+            AppError::ExecSqlFailed(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "ExecSqlFailed",
+                string_to_static_str(json!({"sql": msg}).to_string()),
             ),
             AppError::CallPdsFailed(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,

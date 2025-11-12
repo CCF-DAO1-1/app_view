@@ -111,7 +111,6 @@ impl Reply {
                     .to_owned(),
             )
             .build_sqlx(PostgresQueryBuilder);
-        debug!("insert exec sql: {sql}");
         db.execute(query_with(&sql, values)).await?;
         Ok(())
     }

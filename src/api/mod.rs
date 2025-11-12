@@ -30,6 +30,7 @@ use crate::{
         proposal::list,
         proposal::detail,
         proposal::update_state,
+        proposal::initiation_vote,
         reply::list,
         like::list,
         vote::bind_list,
@@ -45,6 +46,8 @@ use crate::{
     components(schemas(
         record::NewRecord,
         proposal::ProposalQuery,
+        proposal::InitiationParams,
+        proposal::InitiationBody,
         reply::ReplyQuery,
         like::LikeQuery,
         vote::CreateVoteMetaBody,

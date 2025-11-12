@@ -6,6 +6,13 @@ use serde::Serialize;
 use serde_json::Value;
 use sqlx::{Executor, Pool, Postgres, query, query_with};
 
+#[derive(Debug, Clone, Copy)]
+pub enum ProposalState {
+    Draft = 0,
+    InitiationVote = 1,
+    Closed = 2,
+}
+
 #[derive(Iden, Debug, Clone, Copy)]
 pub enum Proposal {
     Table,
@@ -68,7 +75,6 @@ impl Proposal {
                     .to_owned(),
             )
             .build_sqlx(PostgresQueryBuilder);
-        debug!("insert exec sql: {sql}");
 
         db.execute(query_with(&sql, values)).await?;
         Ok(())
@@ -103,7 +109,6 @@ impl Proposal {
             ])
             .and_where(Expr::col(Self::Uri).eq(uri))
             .build_sqlx(PostgresQueryBuilder);
-        debug!("update_state exec sql: {sql}");
 
         let lines = db.execute(query_with(&sql, values)).await?.rows_affected();
         Ok(lines)

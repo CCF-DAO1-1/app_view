@@ -7,9 +7,10 @@ use common_x::restful::{
     },
     ok, ok_simple,
 };
+use molecule::prelude::Entity;
 use sea_query::{BinOper, Expr, ExprTrait, Func, Order, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::query_as_with;
 use utoipa::{IntoParams, ToSchema};
@@ -17,9 +18,13 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    api::{ToTimestamp, build_author},
+    api::{ToTimestamp, build_author, vote::build_vote_meta},
     error::AppError,
-    lexicon::proposal::{Proposal, ProposalRow, ProposalView},
+    lexicon::{
+        proposal::{Proposal, ProposalRow, ProposalState, ProposalView},
+        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
+    },
+    verify_signature,
 };
 
 #[derive(Debug, Validate, Deserialize, ToSchema)]
@@ -75,8 +80,6 @@ pub async fn list(
         .limit(query.limit)
         .build_sqlx(PostgresQueryBuilder);
 
-    debug!("sql: {sql} ({values:?})");
-
     let rows: Vec<ProposalRow> = query_as_with(&sql, values.clone())
         .fetch_all(&state.db)
         .await
@@ -123,8 +126,6 @@ pub async fn detail(
     let (sql, values) = Proposal::build_select(query.viewer)
         .and_where(Expr::col(Proposal::Uri).eq(query.uri))
         .build_sqlx(PostgresQueryBuilder);
-
-    debug!("sql: {sql} ({values:?})");
 
     let row: ProposalRow = query_as_with(&sql, values.clone())
         .fetch_one(&state.db)
@@ -176,4 +177,148 @@ pub async fn update_state(
     }
 
     Ok(ok_simple())
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct InitiationParams {
+    pub proposal_uri: String,
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct InitiationBody {
+    pub params: InitiationParams,
+    pub did: String,
+    #[validate(length(equal = 57))]
+    pub signing_key_did: String,
+    pub signed_bytes: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/proposal/initiation_vote",
+    params(StateQuery),
+    description = "发起立项投票"
+)]
+pub async fn initiation_vote(
+    State(state): State<AppView>,
+    Json(body): Json<InitiationBody>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let InitiationBody {
+        params,
+        did,
+        signing_key_did,
+        signed_bytes,
+    } = body;
+
+    let (sql, values) = Proposal::build_select(None)
+        .and_where(Expr::col(Proposal::Uri).eq(&params.proposal_uri))
+        .build_sqlx(PostgresQueryBuilder);
+
+    let proposal_row: ProposalRow = query_as_with(&sql, values.clone())
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| {
+            debug!("exec sql failed: {e}");
+            AppError::NotFound
+        })?;
+
+    // check proposal owner
+    if proposal_row.repo != did {
+        return Err(AppError::ValidateFailed("not proposal owner".to_string()));
+    }
+
+    // check proposal state
+    if proposal_row.state != ProposalState::Draft as i32 {
+        return Err(AppError::ValidateFailed(
+            "proposal state not draft".to_string(),
+        ));
+    }
+
+    // TODO check AMA completed
+
+    // verify signature
+    verify_signature(
+        &did,
+        &state.indexer_did_url,
+        &signing_key_did,
+        &signed_bytes,
+        &params,
+    )
+    .await
+    .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    // check proposaler's weight > 10_000_000_000_000
+    let ckb_addr = crate::ckb::get_ckb_addr_by_did(&state.ckb_client, &did).await?;
+    let weight = crate::indexer_bind::get_weight(&state, &ckb_addr).await?;
+    if weight < 10_000_000_000_000 {
+        return Err(AppError::ValidateFailed(
+            "not enough weight(At least 100_000 ckb)".to_string(),
+        ));
+    }
+
+    // create vote_meta
+    let proposal_hash = ckb_hash::blake2b_256(serde_json::to_vec(&proposal_row.uri)?);
+
+    let (sql, value) = VoteMeta::build_select()
+        .and_where(Expr::col(VoteMeta::ProposalUri).eq(&proposal_row.uri))
+        .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Waiting as i32))
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_meta_row = if let Ok(vote_meta_row) = query_as_with::<_, VoteMetaRow, _>(&sql, value)
+        .fetch_one(&state.db)
+        .await
+    {
+        vote_meta_row
+    } else {
+        let now = chrono::Local::now();
+        let mut vote_meta_row = VoteMetaRow {
+            id: -1,
+            state: 0,
+            tx_hash: None,
+            proposal_uri: params.proposal_uri.clone(),
+            whitelist_id: now.format("%Y-%m-%d").to_string(),
+            candidates: vec![
+                "Abstain".to_string(),
+                "Agree".to_string(),
+                "Against".to_string(),
+            ],
+            start_time: now,
+            end_time: now.checked_add_days(chrono::Days::new(7)).unwrap(),
+            created: now,
+        };
+
+        vote_meta_row.id = VoteMeta::insert(&state.db, &vote_meta_row).await?;
+        vote_meta_row
+    };
+
+    let vote_meta = build_vote_meta(&state, &vote_meta_row, &proposal_hash).await?;
+
+    let vote_meta_bytes = vote_meta.as_bytes().to_vec();
+    let vote_meta_hex = hex::encode(vote_meta_bytes);
+
+    let outputs_data = vec![vote_meta_hex];
+
+    // update proposal state
+    let lines = Proposal::update_state(
+        &state.db,
+        &proposal_row.uri,
+        ProposalState::InitiationVote as i32,
+    )
+    .await
+    .map_err(|e| AppError::ExecSqlFailed(e.to_string()))?;
+
+    if lines == 0 {
+        return Err(AppError::ExecSqlFailed(
+            "not update proposal state".to_string(),
+        ));
+    }
+
+    Ok(ok(json!({
+        "vote_meta": vote_meta_row,
+        "outputsData": outputs_data
+    })))
 }

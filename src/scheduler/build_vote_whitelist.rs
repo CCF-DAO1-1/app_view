@@ -72,7 +72,6 @@ pub async fn build_vote_whitelist(
         .columns([(Profile::Table, Profile::Did)])
         .from(Profile::Table)
         .build_sqlx(PostgresQueryBuilder);
-    debug!("build_author exec sql: {sql}");
     let row: Vec<(String,)> = sqlx::query_as_with(&sql, values)
         .fetch_all(&db)
         .await
@@ -113,7 +112,7 @@ pub async fn build_vote_whitelist(
         }
     }
     let smt_root_hash = hex::encode(smt_tree.root().as_slice());
-    let id = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let id = chrono::Local::now().format("%Y-%m-%d").to_string();
     info!(
         "Built vote whitelist with {} entries, SMT root hash: {}, id: {}",
         vote_whitelist.len(),

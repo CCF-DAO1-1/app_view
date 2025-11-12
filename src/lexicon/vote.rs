@@ -74,7 +74,6 @@ impl Vote {
             ])?
             .returning_col(Self::Id)
             .build_sqlx(PostgresQueryBuilder);
-        debug!("insert exec sql: {sql}");
         sqlx::query_with(&sql, values)
             .fetch_one(db)
             .await
@@ -88,7 +87,6 @@ impl Vote {
             .value(Self::TxHash, tx_hash)
             .and_where(Expr::col(Self::Id).eq(id))
             .build_sqlx(PostgresQueryBuilder);
-        debug!("update_tx_hash exec sql: {sql}");
 
         db.execute(query_with(&sql, values)).await?;
         Ok(())

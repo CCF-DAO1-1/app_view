@@ -6,6 +6,8 @@ use color_eyre::{
 };
 use serde_json::Value;
 
+use crate::{AppView, ckb::get_nervos_dao_deposit};
+
 pub async fn query_by_to(url: &str, to: &str) -> Result<Value> {
     reqwest::Client::new()
         .get(format!("{url}/by_to/{to}"))
@@ -38,4 +40,24 @@ pub async fn query_by_from(url: &str, from: &str) -> Result<Value> {
                 .cloned()
                 .ok_or_eyre("missing data field in indexer response")
         })?
+}
+
+pub async fn get_weight(state: &AppView, ckb_addr: &str) -> Result<u64> {
+    let from_list = crate::indexer_bind::query_by_to(&state.indexer_bind_url, ckb_addr).await?;
+    debug!("from_list: {:?}", from_list);
+    let mut weight = get_nervos_dao_deposit(&state.ckb_client, ckb_addr).await?;
+
+    for from in from_list
+        .as_array()
+        .ok_or_eyre("from_list is not an array")?
+    {
+        debug!("from: {:?}", from);
+        let from = from
+            .get("from")
+            .and_then(|f| f.as_str())
+            .ok_or_eyre("missing from field")?;
+        let nervos_dao_deposit = get_nervos_dao_deposit(&state.ckb_client, from).await?;
+        weight += nervos_dao_deposit;
+    }
+    Ok(weight)
 }

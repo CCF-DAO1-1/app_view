@@ -1,7 +1,4 @@
-use color_eyre::{
-    Result,
-    eyre::{OptionExt, eyre},
-};
+use color_eyre::{Result, eyre::eyre};
 use common_x::restful::{
     axum::{
         Json,
@@ -10,8 +7,6 @@ use common_x::restful::{
     },
     ok, ok_simple,
 };
-use k256::ecdsa::signature::Verifier;
-use k256::ecdsa::{Signature, VerifyingKey};
 use molecule::prelude::{Builder, Entity};
 use sea_query::{Expr, ExprTrait, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
@@ -24,7 +19,7 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    ckb::{get_ckb_addr_by_did, get_nervos_dao_deposit},
+    ckb::get_ckb_addr_by_did,
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
@@ -35,6 +30,7 @@ use crate::{
     },
     molecules::{self, VoteProof},
     smt::{Blake2bHasher, CkbSMT, SMT_VALUE},
+    verify_signature,
 };
 
 #[derive(Debug, Default, Validate, Deserialize, IntoParams)]
@@ -87,35 +83,17 @@ pub async fn weight(
         .validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let from_list =
-        crate::indexer_bind::query_by_to(&state.indexer_bind_url, &query.ckb_addr).await?;
-    debug!("from_list: {:?}", from_list);
-    let mut weight = get_nervos_dao_deposit(&state.ckb_client, &query.ckb_addr).await?;
-
-    for from in from_list
-        .as_array()
-        .ok_or_eyre("from_list is not an array")?
-    {
-        debug!("from: {:?}", from);
-        let from = from
-            .get("from")
-            .and_then(|f| f.as_str())
-            .ok_or_eyre("missing from field")?;
-        let nervos_dao_deposit = get_nervos_dao_deposit(&state.ckb_client, from).await?;
-        weight += nervos_dao_deposit;
-    }
+    let weight = crate::indexer_bind::get_weight(&state, &query.ckb_addr).await?;
     Ok(ok(json!({ "weight": weight })))
 }
 
 #[utoipa::path(get, path = "/api/vote/whitelist")]
 pub async fn whitelist(State(state): State<AppView>) -> Result<impl IntoResponse, AppError> {
-    let id = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let id = chrono::Local::now().format("%Y-%m-%d").to_string();
 
     let (sql, values) = VoteWhitelist::build_select()
         .and_where(Expr::col(VoteWhitelist::Id).eq(id))
         .build_sqlx(PostgresQueryBuilder);
-
-    debug!("sql: {sql} ({values:?})");
 
     let row: VoteWhitelistRow = query_as_with(&sql, values.clone())
         .fetch_one(&state.db)
@@ -159,8 +137,6 @@ async fn get_proof(
     let (sql, values) = VoteWhitelist::build_select()
         .and_where(Expr::col(VoteWhitelist::Id).eq(whitelist_id))
         .build_sqlx(PostgresQueryBuilder);
-
-    debug!("sql: {sql} ({values:?})");
 
     let row: VoteWhitelistRow = query_as_with(&sql, values.clone())
         .fetch_one(&state.db)
@@ -283,7 +259,7 @@ pub async fn create_vote_meta(
         .fetch_one(&state.db)
         .await
         .map_err(|e| AppError::ValidateFailed(format!("proposal not found: {e}")))?;
-    let proposal_hash = ckb_hash::blake2b_256(serde_json::to_vec(&proposal_sample)?);
+    let proposal_hash = ckb_hash::blake2b_256(serde_json::to_vec(&proposal_sample.uri)?);
 
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::ProposalUri).eq(body.params.proposal_uri.clone()))
@@ -300,7 +276,7 @@ pub async fn create_vote_meta(
             state: 0,
             tx_hash: None,
             proposal_uri: body.params.proposal_uri.clone(),
-            whitelist_id: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+            whitelist_id: chrono::Local::now().format("%Y-%m-%d").to_string(),
             candidates: body.params.candidates.clone(),
             start_time: chrono::DateTime::from_timestamp(body.params.start_time as i64, 0)
                 .unwrap_or(chrono::Local::now().to_utc())
@@ -532,48 +508,6 @@ pub async fn create_vote(
     })))
 }
 
-async fn verify_signature<T>(
-    did: &str,
-    indexer_did_url: &str,
-    signing_key_did: &str,
-    signed_bytes: &str,
-    message: &T,
-) -> Result<()>
-where
-    T: Serialize + ?Sized,
-{
-    // verify did
-    let did_doc = crate::indexer_did::did_document(indexer_did_url, did)
-        .await
-        .map_err(|e| eyre!("get did doc failed: {e}"))?;
-
-    if signing_key_did
-        != did_doc
-            .pointer("/verificationMethods/atproto")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-    {
-        return Err(eyre!("signing_key_did not match"));
-    }
-
-    // verify signature
-    let verifying_key: VerifyingKey = signing_key_did
-        .split_once("did:key:z")
-        .and_then(|(_, key)| {
-            let bytes = bs58::decode(key).into_vec().ok()?;
-            VerifyingKey::from_sec1_bytes(&bytes[2..]).ok()
-        })
-        .ok_or_eyre("invalid signing_key_did")?;
-    let signature = hex::decode(signed_bytes)
-        .map(|bytes| Signature::from_slice(&bytes).map_err(|e| eyre!(e)))??;
-
-    let unsigned_bytes = serde_ipld_dagcbor::to_vec(message)?;
-    debug!("unsigned_bytes: {}", hex::encode(&unsigned_bytes));
-    verifying_key
-        .verify(&unsigned_bytes, &signature)
-        .map_err(|e| eyre!("verify signature failed: {e}"))
-}
-
 #[test]
 fn test_unsigned_bytes() {
     let msg = CreateVoteMetaParams {
@@ -587,7 +521,7 @@ fn test_unsigned_bytes() {
     println!("unsigned_bytes: {}", hex::encode(&unsigned_bytes));
 }
 
-async fn build_vote_meta(
+pub async fn build_vote_meta(
     state: &AppView,
     vote_meta_row: &VoteMetaRow,
     proposal_hash: &[u8],
@@ -595,8 +529,6 @@ async fn build_vote_meta(
     let (sql, values) = VoteWhitelist::build_select()
         .and_where(Expr::col(VoteWhitelist::Id).eq(vote_meta_row.whitelist_id.clone()))
         .build_sqlx(PostgresQueryBuilder);
-
-    debug!("sql: {sql} ({values:?})");
 
     let vote_whitelist_row: VoteWhitelistRow = query_as_with(&sql, values.clone())
         .fetch_one(&state.db)

@@ -2,7 +2,12 @@ use std::str::FromStr;
 
 use ckb_sdk::{Address, AddressPayload, AddressType, CodeHashIndex, NetworkType, OldAddress};
 use ckb_types::{H256, prelude::Unpack};
-use color_eyre::{Result, eyre::eyre};
+use color_eyre::{
+    Result,
+    eyre::{OptionExt, eyre},
+};
+use k256::ecdsa::{Signature, VerifyingKey, signature::Verifier};
+use serde::Serialize;
 
 pub mod api;
 pub mod atproto;
@@ -200,4 +205,46 @@ pub async fn get_network_type(rpc_client: &ckb_sdk::CkbRpcAsyncClient) -> Result
     let chain_info = rpc_client.get_blockchain_info().await?;
     NetworkType::from_raw_str(chain_info.chain.as_str())
         .ok_or_else(|| eyre!("Unsupported network type: {}", chain_info.chain))
+}
+
+pub async fn verify_signature<T>(
+    did: &str,
+    indexer_did_url: &str,
+    signing_key_did: &str,
+    signed_bytes: &str,
+    message: &T,
+) -> Result<()>
+where
+    T: Serialize + ?Sized,
+{
+    // verify did
+    let did_doc = crate::indexer_did::did_document(indexer_did_url, did)
+        .await
+        .map_err(|e| eyre!("get did doc failed: {e}"))?;
+
+    if signing_key_did
+        != did_doc
+            .pointer("/verificationMethods/atproto")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+    {
+        return Err(eyre!("signing_key_did not match"));
+    }
+
+    // verify signature
+    let verifying_key: VerifyingKey = signing_key_did
+        .split_once("did:key:z")
+        .and_then(|(_, key)| {
+            let bytes = bs58::decode(key).into_vec().ok()?;
+            VerifyingKey::from_sec1_bytes(&bytes[2..]).ok()
+        })
+        .ok_or_eyre("invalid signing_key_did")?;
+    let signature = hex::decode(signed_bytes)
+        .map(|bytes| Signature::from_slice(&bytes).map_err(|e| eyre!(e)))??;
+
+    let unsigned_bytes = serde_ipld_dagcbor::to_vec(message)?;
+    debug!("unsigned_bytes: {}", hex::encode(&unsigned_bytes));
+    verifying_key
+        .verify(&unsigned_bytes, &signature)
+        .map_err(|e| eyre!("verify signature failed: {e}"))
 }
