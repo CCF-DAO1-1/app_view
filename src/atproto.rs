@@ -90,7 +90,7 @@ pub async fn put_record(
 
 pub async fn pre_index_action(url: &str, did: &str, ckb_addr: &str) -> Result<Value> {
     let rsp = reqwest::Client::new()
-        .post(format!("{url}/xrpc/com.atproto.web5.preIndexAction"))
+        .post(format!("{url}/xrpc/fans.web5.ckb.preIndexAction"))
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
         .body(
@@ -98,7 +98,7 @@ pub async fn pre_index_action(url: &str, did: &str, ckb_addr: &str) -> Result<Va
                 "did": did,
                 "ckbAddr": ckb_addr,
                 "index": {
-                    "$type":"com.atproto.web5.preIndexAction#createSession"
+                    "$type":"fans.web5.ckb.preIndexAction#createSession"
                 }
             })
             .to_string(),
@@ -124,7 +124,7 @@ pub async fn index_action(
     signing_key: &str,
 ) -> Result<Value> {
     let rsp = reqwest::Client::new()
-        .post(format!("{url}/xrpc/com.atproto.web5.indexAction"))
+        .post(format!("{url}/xrpc/fans.web5.ckb.indexAction"))
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
         .body(
@@ -132,7 +132,7 @@ pub async fn index_action(
                 "did": did,
                 "ckbAddr": ckb_addr,
                 "index": {
-                    "$type":"com.atproto.web5.indexAction#createSession"
+                    "$type":"fans.web5.ckb.indexAction#createSession"
                 },
                 "message": msg,
                 "signedBytes": signed_bytes,
@@ -163,7 +163,7 @@ pub async fn pre_direct_writes(url: &str, auth: &str, repo: &str, writes: &Value
         serde_json::to_string_pretty(&body)?
     );
     let rsp = reqwest::Client::new()
-        .post(format!("{url}/xrpc/com.atproto.web5.preDirectWrites"))
+        .post(format!("{url}/xrpc/fans.web5.ckb.preDirectWrites"))
         .bearer_auth(auth)
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
@@ -202,7 +202,7 @@ pub async fn direct_writes(
         serde_json::to_string_pretty(&body)?
     );
     let rsp = reqwest::Client::new()
-        .post(format!("{url}/xrpc/com.atproto.web5.directWrites"))
+        .post(format!("{url}/xrpc/fans.web5.ckb.directWrites"))
         .bearer_auth(auth)
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
@@ -221,13 +221,13 @@ pub async fn direct_writes(
 
 pub async fn index_query(url: &str, did: &str, item: &str) -> Result<Value> {
     let rsp = reqwest::Client::new()
-        .post(format!("{url}/xrpc/com.atproto.web5.indexQuery"))
+        .post(format!("{url}/xrpc/fans.web5.ckb.indexQuery"))
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
         .body(
             json!({
                 "index": {
-                    "$type": format!("com.atproto.web5.indexQuery#{}", item),
+                    "$type": format!("fans.web5.ckb.indexQuery#{}", item),
                     "did": did,
                 },
             })
@@ -323,7 +323,7 @@ pub async fn write_to_pds(
     let operate = if is_update { "update" } else { "create" };
 
     let writes = json!([{
-        "$type": format!("com.atproto.web5.preDirectWrites#{operate}"),
+        "$type": format!("fans.web5.ckb.preDirectWrites#{operate}"),
         "collection": write.collection,
         "rkey": write.rkey,
         "value": write.value
@@ -369,7 +369,7 @@ pub async fn write_to_pds(
         auth,
         repo,
         &json!([{
-            "$type": format!("com.atproto.web5.directWrites#{operate}"),
+            "$type": format!("fans.web5.ckb.directWrites#{operate}"),
             "collection": write.collection,
             "rkey": write.rkey,
             "value": write.value

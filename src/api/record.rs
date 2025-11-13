@@ -61,7 +61,7 @@ pub async fn create(
         auth.token(),
         &new_record.repo,
         &json!([{
-            "$type": "com.atproto.web5.directWrites#create",
+            "$type": "fans.web5.ckb.directWrites#create",
             "collection": new_record.value["$type"],
             "rkey": new_record.rkey,
             "value": new_record.value
@@ -121,7 +121,7 @@ pub async fn update(
         auth.token(),
         &new_record.repo,
         &json!([{
-            "$type": "com.atproto.web5.directWrites#update",
+            "$type": "fans.web5.ckb.directWrites#update",
             "collection": new_record.value["$type"],
             "rkey": new_record.rkey,
             "value": new_record.value
