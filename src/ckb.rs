@@ -91,6 +91,19 @@ pub async fn get_ckb_addr_by_did(ckb_client: &CkbRpcAsyncClient, did: &str) -> R
     Ok(ckb_addr.to_string())
 }
 
+pub async fn get_tx_status(
+    ckb_client: &CkbRpcAsyncClient,
+    tx_hash: &str,
+) -> Result<ckb_jsonrpc_types::Status> {
+    let tx_hash: [u8; 32] = hex::decode(tx_hash.strip_prefix("0x").unwrap_or(tx_hash))?
+        .try_into()
+        .map_err(|_| eyre!("invalid tx_hash format"))?;
+    let tx_status = ckb_client.get_transaction(ckb_types::H256(tx_hash)).await?;
+    tx_status
+        .ok_or_eyre("get tx error")
+        .map(|t| t.tx_status.status)
+}
+
 #[tokio::test]
 async fn get_live_cell() {
     let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");

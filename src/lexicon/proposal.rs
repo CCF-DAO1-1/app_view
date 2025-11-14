@@ -6,11 +6,12 @@ use serde::Serialize;
 use serde_json::Value;
 use sqlx::{Executor, Pool, Postgres, query, query_as_with, query_with};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum ProposalState {
-    Draft = 0,
-    InitiationVote = 1,
-    Closed = 2,
+    End = 0,
+    #[default]
+    Draft = 1,
+    InitiationVote = 2,
 }
 
 #[derive(Iden, Debug, Clone, Copy)]
@@ -33,7 +34,12 @@ impl Proposal {
             .col(ColumnDef::new(Self::Cid).string().not_null())
             .col(ColumnDef::new(Self::Repo).string().not_null())
             .col(ColumnDef::new(Self::Record).json_binary().default("{}"))
-            .col(ColumnDef::new(Self::State).integer().not_null().default(1))
+            .col(
+                ColumnDef::new(Self::State)
+                    .integer()
+                    .not_null()
+                    .default(ProposalState::Draft as i32),
+            )
             .col(
                 ColumnDef::new(Self::Updated)
                     .timestamp_with_time_zone()

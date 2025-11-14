@@ -19,12 +19,13 @@ pub enum VoteMeta {
     Created,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum VoteMetaState {
     #[default]
     Waiting = 0,
-    Active = 1,
-    Ended = 2,
+    Committed = 1,
+    Timeout = 2,
+    Rejected = 3,
 }
 
 impl VoteMeta {

@@ -9,9 +9,9 @@ use crate::{
     smt::{CkbSMT, SMT_VALUE},
 };
 
-pub async fn build_vote_whitelist_job(sched: &JobScheduler, app: &AppView) -> Result<Job> {
+pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job> {
     let app = app.clone();
-    let mut job = Job::new_async("0 0 0 * * *", move |uuid, mut l| {
+    let mut job = Job::new_async(cron, move |uuid, mut l| {
         Box::pin({
             let db = app.db.clone();
             let ckb_client = app.ckb_client.clone();

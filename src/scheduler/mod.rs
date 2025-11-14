@@ -1,4 +1,5 @@
 pub mod build_vote_whitelist;
+pub mod check_vote_meta_tx;
 
 use color_eyre::{Result, eyre::eyre};
 use tokio_cron_scheduler::JobScheduler;
@@ -8,8 +9,10 @@ use crate::AppView;
 pub async fn init_task_scheduler(app: &AppView) -> Result<()> {
     let mut sched = JobScheduler::new().await?;
 
-    let job = build_vote_whitelist::build_vote_whitelist_job(&sched, app).await?;
+    let job = build_vote_whitelist::job(&sched, app, "0 0 0 * * *").await?;
+    sched.add(job).await?;
 
+    let job = check_vote_meta_tx::job(&sched, app, "1/10 * * * * *").await?;
     sched.add(job).await?;
 
     sched.set_shutdown_handler(Box::new(|| {

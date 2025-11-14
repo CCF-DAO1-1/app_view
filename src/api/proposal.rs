@@ -295,27 +295,16 @@ pub async fn initiation_vote(
         vote_meta_row
     };
 
-    let vote_meta = build_vote_meta(&state, &vote_meta_row, &proposal_hash).await?;
+    let outputs_data = if vote_meta_row.tx_hash.is_none() {
+        let vote_meta = build_vote_meta(&state, &vote_meta_row, &proposal_hash).await?;
 
-    let vote_meta_bytes = vote_meta.as_bytes().to_vec();
-    let vote_meta_hex = hex::encode(vote_meta_bytes);
+        let vote_meta_bytes = vote_meta.as_bytes().to_vec();
+        let vote_meta_hex = hex::encode(vote_meta_bytes);
 
-    let outputs_data = vec![vote_meta_hex];
-
-    // update proposal state
-    let lines = Proposal::update_state(
-        &state.db,
-        &proposal_row.uri,
-        ProposalState::InitiationVote as i32,
-    )
-    .await
-    .map_err(|e| AppError::ExecSqlFailed(e.to_string()))?;
-
-    if lines == 0 {
-        return Err(AppError::ExecSqlFailed(
-            "not update proposal state".to_string(),
-        ));
-    }
+        vec![vote_meta_hex]
+    } else {
+        vec![]
+    };
 
     Ok(ok(json!({
         "vote_meta": vote_meta_row,

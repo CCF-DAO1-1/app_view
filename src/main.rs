@@ -107,10 +107,6 @@ async fn main() -> Result<()> {
         .route("/api/proposal/list", post(api::proposal::list))
         .route("/api/proposal/detail", get(api::proposal::detail))
         .route(
-            "/api/proposal/update_state",
-            post(api::proposal::update_state),
-        )
-        .route(
             "/api/proposal/initiation_vote",
             post(api::proposal::initiation_vote),
         )
@@ -121,10 +117,6 @@ async fn main() -> Result<()> {
         .route("/api/vote/whitelist", get(api::vote::whitelist))
         .route("/api/vote/proof", get(api::vote::proof))
         .route("/api/vote/build_whitelist", get(api::vote::build_whitelist))
-        .route(
-            "/api/vote/create_vote_meta",
-            post(api::vote::create_vote_meta),
-        )
         .route(
             "/api/vote/update_meta_tx_hash",
             post(api::vote::update_meta_tx_hash),
