@@ -25,7 +25,7 @@ use crate::{
         administrator::{Administrator, AdministratorRow},
         proposal::{Proposal, ProposalSample},
         vote::{Vote, VoteRow},
-        vote_meta::{VoteMeta, VoteMetaRow},
+        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
         vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
     molecules::{self, VoteProof},
@@ -505,6 +505,45 @@ pub async fn create_vote(
             "outputsData": [],
             "witnesses": [],
         }
+    })))
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct PrepareBody {
+    pub vote_meta_id: i32,
+    pub did: String,
+}
+
+#[utoipa::path(post, path = "/api/vote/prepare")]
+pub async fn prepare(
+    State(state): State<AppView>,
+    Json(body): Json<PrepareBody>,
+) -> Result<impl IntoResponse, AppError> {
+    let (sql, value) = VoteMeta::build_select()
+        .and_where(Expr::col(VoteMeta::Id).eq(body.vote_meta_id))
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_meta_row: VoteMetaRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not vote_meta: {e}")))?;
+
+    if vote_meta_row.state != VoteMetaState::Committed as i32 {
+        return Err(AppError::ValidateFailed(format!(
+            "vote_meta not aready: {}",
+            vote_meta_row.state
+        )));
+    }
+
+    let vote_addr = get_ckb_addr_by_did(&state.ckb_client, &body.did).await?;
+
+    let proof = get_proof(&state, &vote_meta_row.whitelist_id, &vote_addr).await?;
+
+    Ok(ok(json!({
+        "vote_meta": vote_meta_row,
+        "did": body.did,
+        "vote_addr": vote_addr,
+        "proof": proof
     })))
 }
 

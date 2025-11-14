@@ -38,6 +38,7 @@ use crate::{
         vote::proof,
         vote::build_whitelist,
         vote::update_meta_tx_hash,
+        vote::prepare,
         vote::create_vote,
         vote::update_vote_tx_hash,
     ),
@@ -52,6 +53,7 @@ use crate::{
         vote::CreateVoteParams,
         vote::UpdateTxBody,
         vote::UpdateTxParams,
+        vote::PrepareBody,
     ))
 )]
 pub struct ApiDoc;
