@@ -22,7 +22,7 @@ use crate::{
     error::AppError,
     lexicon::{
         proposal::{Proposal, ProposalRow, ProposalState, ProposalView},
-        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
+        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteType},
     },
     verify_signature,
 };
@@ -88,7 +88,7 @@ pub async fn list(
     let mut views = vec![];
     for row in rows {
         let author = build_author(&state, &row.repo).await;
-        views.push(ProposalView::build(row, author));
+        views.push(ProposalView::build(row, author, None));
     }
     let cursor = views.last().map(|r| r.updated.timestamp());
     let result = if let Some(cursor) = cursor {
@@ -134,9 +134,30 @@ pub async fn detail(
             debug!("exec sql failed: {e}");
             AppError::NotFound
         })?;
+    let now = chrono::Local::now().timestamp();
+    let (sql, value) = VoteMeta::build_select()
+        .and_where(Expr::col(VoteMeta::ProposalUri).eq(&row.uri))
+        .and_where(
+            Expr::col(VoteMeta::State)
+                .eq(VoteMetaState::Waiting as i32)
+                .or(Expr::col(VoteMeta::State).eq(VoteMetaState::Committed as i32)),
+        )
+        .and_where(Expr::col((VoteMeta::Table, VoteMeta::StartTime)).binary(
+            BinOper::SmallerThanOrEqual,
+            Func::cust(ToTimestamp).args([Expr::val(now)]),
+        ))
+        .and_where(Expr::col((VoteMeta::Table, VoteMeta::EndTime)).binary(
+            BinOper::GreaterThanOrEqual,
+            Func::cust(ToTimestamp).args([Expr::val(now)]),
+        ))
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_meta_row: Option<VoteMetaRow> = query_as_with::<_, VoteMetaRow, _>(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .ok();
 
     let author = build_author(&state, &row.repo).await;
-    let view = ProposalView::build(row, author);
+    let view = ProposalView::build(row, author, vote_meta_row);
 
     Ok(ok(view))
 }
@@ -266,6 +287,7 @@ pub async fn initiation_vote(
 
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::ProposalUri).eq(&proposal_row.uri))
+        .and_where(Expr::col(VoteMeta::VoteType).eq(VoteType::Initiation as i32))
         .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Waiting as i32))
         .build_sqlx(PostgresQueryBuilder);
     let vote_meta_row = if let Ok(vote_meta_row) = query_as_with::<_, VoteMetaRow, _>(&sql, value)
@@ -277,6 +299,7 @@ pub async fn initiation_vote(
         let now = chrono::Local::now();
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
+            vote_type: 0,
             state: 0,
             tx_hash: None,
             proposal_uri: params.proposal_uri.clone(),
@@ -288,6 +311,7 @@ pub async fn initiation_vote(
             ],
             start_time: now,
             end_time: now.checked_add_days(chrono::Days::new(7)).unwrap(),
+            creater: did.clone(),
             created: now,
         };
 

@@ -6,6 +6,8 @@ use serde::Serialize;
 use serde_json::Value;
 use sqlx::{Executor, Pool, Postgres, query, query_as_with, query_with};
 
+use crate::lexicon::vote_meta::VoteMetaRow;
+
 #[derive(Debug, Clone, Copy, Default)]
 pub enum ProposalState {
     End = 0,
@@ -180,10 +182,11 @@ pub struct ProposalView {
     pub updated: DateTime<Local>,
     pub like_count: String,
     pub liked: bool,
+    pub vote_meta: Option<VoteMetaRow>,
 }
 
 impl ProposalView {
-    pub fn build(row: ProposalRow, author: Value) -> Self {
+    pub fn build(row: ProposalRow, author: Value, vote_meta: Option<VoteMetaRow>) -> Self {
         Self {
             uri: row.uri,
             cid: row.cid,
@@ -193,6 +196,7 @@ impl ProposalView {
             state: row.state,
             like_count: row.like_count.to_string(),
             liked: row.liked,
+            vote_meta,
         }
     }
 }

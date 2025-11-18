@@ -179,7 +179,7 @@ async fn get_proof(
     if ret {
         Ok((smt_root_hash.as_slice().to_vec(), compiled_proof.0))
     } else {
-        Err(eyre!("Not in smt"))
+        Err(eyre!("Not in the whitelist"))
     }
 }
 
@@ -273,6 +273,7 @@ pub async fn create_vote_meta(
     } else {
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
+            vote_type: 0,
             state: 0,
             tx_hash: None,
             proposal_uri: body.params.proposal_uri.clone(),
@@ -289,6 +290,7 @@ pub async fn create_vote_meta(
                         .to_utc(),
                 )
                 .into(),
+            creater: body.did.clone(),
             created: chrono::Local::now(),
         };
 
@@ -342,14 +344,6 @@ pub async fn update_meta_tx_hash(
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let (sql, value) = Administrator::build_select()
-        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
-        .build_sqlx(PostgresQueryBuilder);
-    let _admin_row: AdministratorRow = query_as_with(&sql, value)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
-
     verify_signature(
         &body.did,
         &state.indexer_did_url,
@@ -359,10 +353,6 @@ pub async fn update_meta_tx_hash(
     )
     .await
     .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
-
-    VoteMeta::update_tx_hash(&state.db, body.params.id, &body.params.tx_hash)
-        .await
-        .map_err(|e| AppError::ValidateFailed(format!("update vote_meta tx_hash failed: {e}")))?;
 
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::Id).eq(body.params.id))
@@ -375,7 +365,15 @@ pub async fn update_meta_tx_hash(
             AppError::NotFound
         })?;
 
-    Ok(ok(vote_meta_row))
+    if vote_meta_row.creater != body.did {
+        return Err(AppError::ValidateFailed("not creater".to_string()));
+    }
+
+    VoteMeta::update_tx_hash(&state.db, body.params.id, &body.params.tx_hash)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("update vote_meta tx_hash failed: {e}")))?;
+
+    Ok(ok_simple())
 }
 
 #[utoipa::path(post, path = "/api/vote/update_vote_tx_hash")]
@@ -386,14 +384,6 @@ pub async fn update_vote_tx_hash(
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let (sql, value) = Administrator::build_select()
-        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
-        .build_sqlx(PostgresQueryBuilder);
-    let _admin_row: AdministratorRow = query_as_with(&sql, value)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
-
     verify_signature(
         &body.did,
         &state.indexer_did_url,
@@ -403,10 +393,6 @@ pub async fn update_vote_tx_hash(
     )
     .await
     .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
-
-    Vote::update_tx_hash(&state.db, body.params.id, &body.params.tx_hash)
-        .await
-        .map_err(|e| AppError::ValidateFailed(format!("update vote tx_hash failed: {e}")))?;
 
     let (sql, value) = Vote::build_select()
         .and_where(Expr::col(Vote::Id).eq(body.params.id))
@@ -419,7 +405,15 @@ pub async fn update_vote_tx_hash(
             AppError::NotFound
         })?;
 
-    Ok(ok(vote_row))
+    if vote_row.voter != body.did {
+        return Err(AppError::ValidateFailed("not voter".to_string()));
+    }
+
+    Vote::update_tx_hash(&state.db, body.params.id, &body.params.tx_hash)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("update vote tx_hash failed: {e}")))?;
+
+    Ok(ok_simple())
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
@@ -446,14 +440,6 @@ pub async fn create_vote(
 ) -> Result<impl IntoResponse, AppError> {
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
-
-    let (sql, value) = Administrator::build_select()
-        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
-        .build_sqlx(PostgresQueryBuilder);
-    let _admin_row: AdministratorRow = query_as_with(&sql, value)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
 
     verify_signature(
         &body.did,

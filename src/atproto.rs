@@ -274,8 +274,6 @@ pub async fn create_session(
     let signing_key = bs58::encode(signing_key).into_string();
     let signing_key = format!("did:key:z{}", signing_key);
 
-    debug!("signed_bytes: {signed_bytes}");
-    debug!("signing_key: {signing_key}");
     let r = index_action(
         pds_url,
         repo,
@@ -351,7 +349,6 @@ pub async fn write_to_pds(
         .as_slice(),
     );
     let signed_bytes = hex::encode(sig.to_vec());
-    debug!("signed_bytes: {signed_bytes}");
 
     let mut root = json!({
         "did": repo,

@@ -243,7 +243,6 @@ where
         .map(|bytes| Signature::from_slice(&bytes).map_err(|e| eyre!(e)))??;
 
     let unsigned_bytes = serde_ipld_dagcbor::to_vec(message)?;
-    debug!("unsigned_bytes: {}", hex::encode(&unsigned_bytes));
     verifying_key
         .verify(&unsigned_bytes, &signature)
         .map_err(|e| eyre!("verify signature failed: {e}"))

@@ -84,7 +84,6 @@ pub async fn build_author(state: &AppView, repo: &str) -> Value {
     let (sql, values) = Profile::build_select()
         .and_where(Expr::col(Profile::Did).eq(repo))
         .build_sqlx(PostgresQueryBuilder);
-    debug!("build_author exec sql: {sql}");
     let row: Option<ProfileRow> = sqlx::query_as_with(&sql, values)
         .fetch_optional(&state.db)
         .await

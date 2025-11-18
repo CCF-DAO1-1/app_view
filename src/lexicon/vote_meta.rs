@@ -5,10 +5,16 @@ use sea_query_sqlx::SqlxBinder;
 use serde::Serialize;
 use sqlx::{Executor, Pool, Postgres, Row, query, query_with};
 
+#[derive(Debug, Clone, Copy)]
+pub enum VoteType {
+    Initiation = 0,
+}
+
 #[derive(Iden, Debug, Clone, Copy)]
 pub enum VoteMeta {
     Table,
     Id,
+    VoteType,
     State,
     TxHash,
     ProposalUri,
@@ -16,6 +22,7 @@ pub enum VoteMeta {
     Candidates,
     StartTime,
     EndTime,
+    Creater,
     Created,
 }
 
@@ -26,6 +33,7 @@ pub enum VoteMetaState {
     Committed = 1,
     Timeout = 2,
     Rejected = 3,
+    Finished = 4,
 }
 
 impl VoteMeta {
@@ -39,6 +47,12 @@ impl VoteMeta {
                     .not_null()
                     .auto_increment()
                     .primary_key(),
+            )
+            .col(
+                ColumnDef::new(Self::VoteType)
+                    .integer()
+                    .not_null()
+                    .default(0),
             )
             .col(ColumnDef::new(Self::State).integer().not_null().default(0))
             .col(ColumnDef::new(Self::TxHash).string())
@@ -56,10 +70,27 @@ impl VoteMeta {
                     .not_null(),
             )
             .col(
+                ColumnDef::new(Self::Creater)
+                    .string()
+                    .not_null()
+                    .default(""),
+            )
+            .col(
                 ColumnDef::new(Self::Created)
                     .timestamp_with_time_zone()
                     .not_null()
                     .default(Expr::current_timestamp()),
+            )
+            .build(PostgresQueryBuilder);
+        db.execute(query(&sql)).await?;
+
+        let sql = sea_query::Table::alter()
+            .table(Self::Table)
+            .add_column_if_not_exists(
+                ColumnDef::new(Self::VoteType)
+                    .integer()
+                    .not_null()
+                    .default(0),
             )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
@@ -70,6 +101,7 @@ impl VoteMeta {
         let (sql, values) = sea_query::Query::insert()
             .into_table(Self::Table)
             .columns([
+                Self::VoteType,
                 Self::State,
                 Self::TxHash,
                 Self::ProposalUri,
@@ -77,9 +109,11 @@ impl VoteMeta {
                 Self::Candidates,
                 Self::StartTime,
                 Self::EndTime,
+                Self::Creater,
                 Self::Created,
             ])
             .values([
+                row.vote_type.into(),
                 row.state.into(),
                 row.tx_hash.clone().into(),
                 row.proposal_uri.clone().into(),
@@ -87,6 +121,7 @@ impl VoteMeta {
                 row.candidates.clone().into(),
                 row.start_time.into(),
                 row.end_time.into(),
+                row.creater.clone().into(),
                 Expr::current_timestamp(),
             ])?
             .returning_col(Self::Id)
@@ -113,6 +148,7 @@ impl VoteMeta {
         sea_query::Query::select()
             .columns([
                 (Self::Table, Self::Id),
+                (Self::Table, Self::VoteType),
                 (Self::Table, Self::State),
                 (Self::Table, Self::TxHash),
                 (Self::Table, Self::ProposalUri),
@@ -120,6 +156,7 @@ impl VoteMeta {
                 (Self::Table, Self::Candidates),
                 (Self::Table, Self::StartTime),
                 (Self::Table, Self::EndTime),
+                (Self::Table, Self::Creater),
                 (Self::Table, Self::Created),
             ])
             .from(Self::Table)
@@ -130,6 +167,7 @@ impl VoteMeta {
 #[derive(sqlx::FromRow, Debug, Serialize)]
 pub struct VoteMetaRow {
     pub id: i32,
+    pub vote_type: i32,
     pub state: i32,
     pub tx_hash: Option<String>,
     pub proposal_uri: String,
@@ -137,5 +175,6 @@ pub struct VoteMetaRow {
     pub candidates: Vec<String>,
     pub start_time: DateTime<Local>,
     pub end_time: DateTime<Local>,
+    pub creater: String,
     pub created: DateTime<Local>,
 }
