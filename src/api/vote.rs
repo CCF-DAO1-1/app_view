@@ -8,7 +8,7 @@ use common_x::restful::{
     ok, ok_simple,
 };
 use molecule::prelude::{Builder, Entity};
-use sea_query::{Expr, ExprTrait, PostgresQueryBuilder};
+use sea_query::{Expr, ExprTrait, Order, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -19,7 +19,7 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    ckb::get_ckb_addr_by_did,
+    ckb::{get_ckb_addr_by_did, get_vote_result},
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
@@ -83,7 +83,12 @@ pub async fn weight(
         .validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let weight = crate::indexer_bind::get_weight(&state, &query.ckb_addr).await?;
+    let weight = crate::indexer_bind::get_weight(
+        &state.ckb_client,
+        &state.indexer_bind_url,
+        &query.ckb_addr,
+    )
+    .await?;
     Ok(ok(json!({ "weight": weight })))
 }
 
@@ -274,6 +279,7 @@ pub async fn create_vote_meta(
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             vote_type: 0,
+            vote_request_type: 0,
             state: 0,
             tx_hash: None,
             proposal_uri: body.params.proposal_uri.clone(),
@@ -376,10 +382,28 @@ pub async fn update_meta_tx_hash(
     Ok(ok_simple())
 }
 
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct UpdateVoteTxParams {
+    pub id: i32,
+    pub tx_hash: String,
+    pub candidates_index: i32,
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct UpdateVoteTxBody {
+    pub params: UpdateVoteTxParams,
+    pub did: String,
+    #[validate(length(equal = 57))]
+    pub signing_key_did: String,
+    pub signed_bytes: String,
+}
+
 #[utoipa::path(post, path = "/api/vote/update_vote_tx_hash")]
 pub async fn update_vote_tx_hash(
     State(state): State<AppView>,
-    Json(body): Json<UpdateTxBody>,
+    Json(body): Json<UpdateVoteTxBody>,
 ) -> Result<impl IntoResponse, AppError> {
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
@@ -394,26 +418,18 @@ pub async fn update_vote_tx_hash(
     .await
     .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let (sql, value) = Vote::build_select()
-        .and_where(Expr::col(Vote::Id).eq(body.params.id))
-        .build_sqlx(PostgresQueryBuilder);
-    let vote_row: VoteRow = query_as_with(&sql, value)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| {
-            debug!("exec sql failed: {e}");
-            AppError::NotFound
-        })?;
+    let mut vote_row = VoteRow {
+        id: -1,
+        state: 0,
+        tx_hash: Some(body.params.tx_hash),
+        vote_meta_id: body.params.id,
+        candidates_index: body.params.candidates_index,
+        voter: body.did.clone(),
+        created: chrono::Local::now(),
+    };
+    vote_row.id = Vote::insert(&state.db, &vote_row).await?;
 
-    if vote_row.voter != body.did {
-        return Err(AppError::ValidateFailed("not voter".to_string()));
-    }
-
-    Vote::update_tx_hash(&state.db, body.params.id, &body.params.tx_hash)
-        .await
-        .map_err(|e| AppError::ValidateFailed(format!("update vote tx_hash failed: {e}")))?;
-
-    Ok(ok_simple())
+    Ok(ok(vote_row))
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
@@ -433,8 +449,8 @@ pub struct CreateVoteBody {
     pub signed_bytes: String,
 }
 
-#[utoipa::path(post, path = "/api/vote/create_vote")]
-pub async fn create_vote(
+// #[utoipa::path(post, path = "/api/vote/create_vote")]
+pub async fn _create_vote(
     State(state): State<AppView>,
     Json(body): Json<CreateVoteBody>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -479,7 +495,7 @@ pub async fn create_vote(
     let lock_script = ckb_types::packed::Script::from(address.payload());
     let proof = get_proof(&state, &vote_meta_row.whitelist_id, &vote_addr).await?;
 
-    let vote_proof = VoteProof::new_builder()
+    let _vote_proof = VoteProof::new_builder()
         .lock_script_hash::<Vec<u8>>(lock_script.calc_script_hash().raw_data().to_vec())
         .smt_proof::<Vec<u8>>(proof.1)
         .build();
@@ -506,6 +522,9 @@ pub async fn prepare(
     State(state): State<AppView>,
     Json(body): Json<PrepareBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::Id).eq(body.vote_meta_id))
         .build_sqlx(PostgresQueryBuilder);
@@ -514,7 +533,7 @@ pub async fn prepare(
         .await
         .map_err(|e| AppError::ValidateFailed(format!("not vote_meta: {e}")))?;
 
-    if vote_meta_row.state != VoteMetaState::Committed as i32 {
+    if vote_meta_row.state != (VoteMetaState::Committed as i32) {
         return Err(AppError::ValidateFailed(format!(
             "vote_meta not aready: {}",
             vote_meta_row.state
@@ -529,7 +548,104 @@ pub async fn prepare(
         "vote_meta": vote_meta_row,
         "did": body.did,
         "vote_addr": vote_addr,
-        "proof": proof
+        "proof": proof.1
+    })))
+}
+
+#[utoipa::path(post, path = "/api/vote/status")]
+pub async fn status(
+    State(state): State<AppView>,
+    Json(body): Json<PrepareBody>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Vote::build_select()
+        .and_where(Expr::col(Vote::VoteMetaId).eq(body.vote_meta_id))
+        .and_where(Expr::col(Vote::Voter).eq(body.did))
+        .order_by(Vote::Created, Order::Desc)
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_row_vec: Vec<VoteRow> = query_as_with(&sql, value)
+        .fetch_all(&state.db)
+        .await
+        .ok()
+        .unwrap_or(vec![]);
+
+    Ok(ok(vote_row_vec))
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct VoteResult {
+    pub ckb_addr: String,
+    pub candidates_index: usize,
+    pub weight: u64,
+}
+
+#[derive(Debug, Default, Validate, Deserialize, IntoParams)]
+#[serde(default)]
+pub struct DetailQuery {
+    pub id: i32,
+}
+
+#[utoipa::path(get, path = "/api/vote/detail", params(DetailQuery))]
+pub async fn detail(
+    State(state): State<AppView>,
+    Query(query): Query<DetailQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    query
+        .validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = VoteMeta::build_select()
+        .and_where(Expr::col(VoteMeta::Id).eq(query.id))
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_meta_row: VoteMetaRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| {
+            debug!("exec sql failed: {e}");
+            AppError::NotFound
+        })?;
+
+    if vote_meta_row.state != (VoteMetaState::Committed as i32)
+        && vote_meta_row.state != (VoteMetaState::Finished as i32)
+    {
+        return Err(AppError::ValidateFailed(format!(
+            "vote_meta not aready: {}",
+            vote_meta_row.state
+        )));
+    }
+
+    let votes = if let Some(tx_hash) = &vote_meta_row.tx_hash {
+        get_vote_result(&state.ckb_client, &state.indexer_bind_url, tx_hash).await?
+    } else {
+        return Err(AppError::ValidateFailed(
+            "vote_meta have not tx_hash".to_string(),
+        ));
+    };
+    let vote_sum = votes.len();
+    let mut valid_vote_sum = 0;
+    let mut weight_sum = 0;
+    let mut valid_weight_sum = 0;
+    let mut candidate_votes = vec![(0, 0); vote_meta_row.candidates.len()];
+    for vote in votes {
+        weight_sum += vote.1.1;
+        if let Some(candidate_vote) = candidate_votes.get_mut(vote.1.0) {
+            valid_vote_sum += 1;
+            candidate_vote.0 += 1;
+            valid_weight_sum += vote.1.1;
+            candidate_vote.1 += vote.1.1;
+        }
+    }
+
+    Ok(ok(json!({
+        "vote_meta": vote_meta_row,
+        "vote_sum": vote_sum,
+        "valid_vote_sum": valid_vote_sum,
+        "weight_sum": weight_sum,
+        "valid_weight_sum": valid_weight_sum,
+        "candidate_votes": candidate_votes
     })))
 }
 

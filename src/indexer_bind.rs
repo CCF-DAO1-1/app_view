@@ -1,12 +1,13 @@
 use std::time::Duration;
 
+use ckb_sdk::CkbRpcAsyncClient;
 use color_eyre::{
     Result,
     eyre::{OptionExt, eyre},
 };
 use serde_json::Value;
 
-use crate::{AppView, ckb::get_nervos_dao_deposit};
+use crate::ckb::get_nervos_dao_deposit;
 
 pub async fn query_by_to(url: &str, to: &str) -> Result<Value> {
     reqwest::Client::new()
@@ -42,10 +43,14 @@ pub async fn query_by_from(url: &str, from: &str) -> Result<Value> {
         })?
 }
 
-pub async fn get_weight(state: &AppView, ckb_addr: &str) -> Result<u64> {
-    let from_list = crate::indexer_bind::query_by_to(&state.indexer_bind_url, ckb_addr).await?;
+pub async fn get_weight(
+    ckb_client: &CkbRpcAsyncClient,
+    indexer_bind_url: &str,
+    ckb_addr: &str,
+) -> Result<u64> {
+    let from_list = crate::indexer_bind::query_by_to(indexer_bind_url, ckb_addr).await?;
     debug!("from_list: {:?}", from_list);
-    let mut weight = get_nervos_dao_deposit(&state.ckb_client, ckb_addr).await?;
+    let mut weight = get_nervos_dao_deposit(ckb_client, ckb_addr).await?;
 
     for from in from_list
         .as_array()
@@ -56,7 +61,7 @@ pub async fn get_weight(state: &AppView, ckb_addr: &str) -> Result<u64> {
             .get("from")
             .and_then(|f| f.as_str())
             .ok_or_eyre("missing from field")?;
-        let nervos_dao_deposit = get_nervos_dao_deposit(&state.ckb_client, from).await?;
+        let nervos_dao_deposit = get_nervos_dao_deposit(ckb_client, from).await?;
         weight += nervos_dao_deposit;
     }
     Ok(weight)

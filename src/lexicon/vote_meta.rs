@@ -10,11 +10,20 @@ pub enum VoteType {
     Initiation = 0,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum VoteRequestType {
+    Default = 0,
+    Quick = 1,
+    Sample = 2,
+    Hard = 3,
+}
+
 #[derive(Iden, Debug, Clone, Copy)]
 pub enum VoteMeta {
     Table,
     Id,
     VoteType,
+    VoteRequestType,
     State,
     TxHash,
     ProposalUri,
@@ -54,6 +63,12 @@ impl VoteMeta {
                     .not_null()
                     .default(0),
             )
+            .col(
+                ColumnDef::new(Self::VoteRequestType)
+                    .integer()
+                    .not_null()
+                    .default(0),
+            )
             .col(ColumnDef::new(Self::State).integer().not_null().default(0))
             .col(ColumnDef::new(Self::TxHash).string())
             .col(ColumnDef::new(Self::ProposalUri).string().not_null())
@@ -87,7 +102,7 @@ impl VoteMeta {
         let sql = sea_query::Table::alter()
             .table(Self::Table)
             .add_column_if_not_exists(
-                ColumnDef::new(Self::VoteType)
+                ColumnDef::new(Self::VoteRequestType)
                     .integer()
                     .not_null()
                     .default(0),
@@ -102,6 +117,7 @@ impl VoteMeta {
             .into_table(Self::Table)
             .columns([
                 Self::VoteType,
+                Self::VoteRequestType,
                 Self::State,
                 Self::TxHash,
                 Self::ProposalUri,
@@ -114,6 +130,7 @@ impl VoteMeta {
             ])
             .values([
                 row.vote_type.into(),
+                row.vote_request_type.into(),
                 row.state.into(),
                 row.tx_hash.clone().into(),
                 row.proposal_uri.clone().into(),
@@ -149,6 +166,7 @@ impl VoteMeta {
             .columns([
                 (Self::Table, Self::Id),
                 (Self::Table, Self::VoteType),
+                (Self::Table, Self::VoteRequestType),
                 (Self::Table, Self::State),
                 (Self::Table, Self::TxHash),
                 (Self::Table, Self::ProposalUri),
@@ -168,6 +186,7 @@ impl VoteMeta {
 pub struct VoteMetaRow {
     pub id: i32,
     pub vote_type: i32,
+    pub vote_request_type: i32,
     pub state: i32,
     pub tx_hash: Option<String>,
     pub proposal_uri: String,

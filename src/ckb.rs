@@ -1,8 +1,12 @@
-use ckb_sdk::CkbRpcAsyncClient;
+use std::collections::HashMap;
+
+use ckb_sdk::{Address, AddressPayload, CkbRpcAsyncClient, NetworkType};
+use ckb_types::{core::ScriptHashType, prelude::Pack};
 use color_eyre::{
     Result,
     eyre::{OptionExt, eyre},
 };
+use serde_json::json;
 
 pub async fn get_nervos_dao_deposit(ckb_client: &CkbRpcAsyncClient, ckb_addr: &str) -> Result<u64> {
     let address = crate::AddressParser::default()
@@ -40,7 +44,7 @@ pub async fn get_nervos_dao_deposit(ckb_client: &CkbRpcAsyncClient, ckb_addr: &s
                 group_by_transaction: None,
             },
             ckb_sdk::rpc::ckb_indexer::Order::Asc,
-            1000.into(),
+            10000.into(),
             None,
         )
         .await?;
@@ -50,6 +54,129 @@ pub async fn get_nervos_dao_deposit(ckb_client: &CkbRpcAsyncClient, ckb_addr: &s
         total_capacity += output.capacity.value();
     }
     Ok(total_capacity)
+}
+
+#[test]
+fn test_outpoint_to_args() {
+    use ckb_types::prelude::Entity;
+    let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
+        tx_hash: ckb_types::H256(
+            hex::decode(
+                "0x5e81c54bc21c321bea4993f4d04464c8cba7a545aae542e755e5b79b1fd12550"
+                    .trim_start_matches("0x"),
+            )
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        ),
+        index: 0.into(),
+    }
+    .into();
+    let pubkey_hash = ckb_hash::blake2b_256(vote_meta_out_point.as_bytes());
+    let args = pubkey_hash[0..20].to_vec();
+    let args = format!("0x{}", hex::encode(args));
+    assert_eq!(args, "0x6aa486510e313005d89dd8b5dbbb1d1110ba2d7b");
+}
+
+pub async fn get_vote_result(
+    ckb_client: &CkbRpcAsyncClient,
+    indexer_bind_url: &str,
+    vote_meta_tx_hash: &str,
+) -> Result<HashMap<String, (usize, u64)>> {
+    use ckb_types::prelude::Entity;
+    let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
+        tx_hash: ckb_types::H256(
+            hex::decode(vote_meta_tx_hash.trim_start_matches("0x"))
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        ),
+        index: 0.into(),
+    }
+    .into();
+    let pubkey_hash = ckb_hash::blake2b_256(vote_meta_out_point.as_bytes());
+    let args = pubkey_hash[0..20].to_vec();
+    let args = format!("0x{}", hex::encode(args));
+    let search_key = json!({
+        "script": {
+            "code_hash": "0xb140de2d7d1536cfdcb82da7520475edce5785dff90edae9073c1143d88f50c5",
+            "hash_type": "type",
+            "args": args
+        },
+        "script_type": "type"
+    });
+    let search_key: ckb_sdk::rpc::ckb_indexer::SearchKey = serde_json::from_value(search_key)?;
+    let r = ckb_client
+        .get_cells(
+            search_key,
+            ckb_sdk::rpc::ckb_indexer::Order::Asc,
+            10000.into(),
+            None,
+        )
+        .await?;
+    let mut result = HashMap::new();
+    for cell in &r.objects {
+        if let Some(data) = &cell.output_data {
+            let mut bs = String::new();
+            for b in data.as_bytes() {
+                let b = b.reverse_bits();
+                bs.push_str(&format!("{b:08b}"));
+            }
+            let indices = bs.match_indices('1');
+            for (i, _) in indices {
+                let payload = AddressPayload::Full {
+                    hash_type: ScriptHashType::Type,
+                    code_hash: cell.output.lock.code_hash.pack(),
+                    args: cell.output.lock.args.clone().into_bytes(),
+                };
+                let address = Address::new(NetworkType::Testnet, payload.clone(), true).to_string();
+                debug!("address: {}", address);
+                let weight =
+                    crate::indexer_bind::get_weight(ckb_client, indexer_bind_url, &address)
+                        .await
+                        .unwrap_or(0);
+                result.insert(address, (i, weight));
+            }
+        }
+    }
+    Ok(result)
+}
+
+#[test]
+fn test_bit_flag() {
+    let f: u8 = 1 << 2;
+    println!("{f}");
+    println!("{f:b}");
+    let f = f.to_le_bytes();
+    println!("{f:?}");
+    let f = hex::encode(f);
+    println!("{f}");
+
+    let f = hex::decode(f).unwrap();
+    let mut bs = String::new();
+    for b in f {
+        let b = b.reverse_bits();
+        bs.push_str(&format!("{b:08b}"));
+    }
+    println!("{bs}, len: {}", bs.len());
+    let indices = bs.match_indices('1');
+    for (i, _) in indices {
+        println!("index: {i}");
+    }
+}
+
+#[tokio::test]
+async fn test_get_vote_result() {
+    let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");
+    let indexer_bind_url = "";
+    let r = get_vote_result(
+        &ckb_client,
+        indexer_bind_url,
+        "0x5e81c54bc21c321bea4993f4d04464c8cba7a545aae542e755e5b79b1fd12550",
+    )
+    .await
+    .unwrap();
+    println!("{r:?}");
 }
 
 pub async fn get_ckb_addr_by_did(ckb_client: &CkbRpcAsyncClient, did: &str) -> Result<String> {

@@ -39,8 +39,9 @@ use crate::{
         vote::build_whitelist,
         vote::update_meta_tx_hash,
         vote::prepare,
-        vote::create_vote,
         vote::update_vote_tx_hash,
+        vote::status,
+        vote::detail,
     ),
     components(schemas(
         record::NewRecord,
@@ -53,6 +54,8 @@ use crate::{
         vote::CreateVoteParams,
         vote::UpdateTxBody,
         vote::UpdateTxParams,
+        vote::UpdateVoteTxBody,
+        vote::UpdateVoteTxParams,
         vote::PrepareBody,
     ))
 )]

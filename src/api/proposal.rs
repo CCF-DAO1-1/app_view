@@ -134,7 +134,6 @@ pub async fn detail(
             debug!("exec sql failed: {e}");
             AppError::NotFound
         })?;
-    let now = chrono::Local::now().timestamp();
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::ProposalUri).eq(&row.uri))
         .and_where(
@@ -142,14 +141,6 @@ pub async fn detail(
                 .eq(VoteMetaState::Waiting as i32)
                 .or(Expr::col(VoteMeta::State).eq(VoteMetaState::Committed as i32)),
         )
-        .and_where(Expr::col((VoteMeta::Table, VoteMeta::StartTime)).binary(
-            BinOper::SmallerThanOrEqual,
-            Func::cust(ToTimestamp).args([Expr::val(now)]),
-        ))
-        .and_where(Expr::col((VoteMeta::Table, VoteMeta::EndTime)).binary(
-            BinOper::GreaterThanOrEqual,
-            Func::cust(ToTimestamp).args([Expr::val(now)]),
-        ))
         .build_sqlx(PostgresQueryBuilder);
     let vote_meta_row: Option<VoteMetaRow> = query_as_with::<_, VoteMetaRow, _>(&sql, value)
         .fetch_one(&state.db)
@@ -254,7 +245,7 @@ pub async fn initiation_vote(
     }
 
     // check proposal state
-    if proposal_row.state != ProposalState::Draft as i32 {
+    if proposal_row.state != (ProposalState::Draft as i32) {
         return Err(AppError::ValidateFailed(
             "proposal state not draft".to_string(),
         ));
@@ -275,7 +266,9 @@ pub async fn initiation_vote(
 
     // check proposaler's weight > 10_000_000_000_000
     let ckb_addr = crate::ckb::get_ckb_addr_by_did(&state.ckb_client, &did).await?;
-    let weight = crate::indexer_bind::get_weight(&state, &ckb_addr).await?;
+    let weight =
+        crate::indexer_bind::get_weight(&state.ckb_client, &state.indexer_bind_url, &ckb_addr)
+            .await?;
     if weight < 10_000_000_000_000 {
         return Err(AppError::ValidateFailed(
             "not enough weight(At least 100_000 ckb)".to_string(),
@@ -300,6 +293,7 @@ pub async fn initiation_vote(
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             vote_type: 0,
+            vote_request_type: 0,
             state: 0,
             tx_hash: None,
             proposal_uri: params.proposal_uri.clone(),

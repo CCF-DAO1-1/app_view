@@ -122,11 +122,12 @@ async fn main() -> Result<()> {
             post(api::vote::update_meta_tx_hash),
         )
         .route("/api/vote/prepare", post(api::vote::prepare))
-        .route("/api/vote/create_vote", post(api::vote::create_vote))
         .route(
             "/api/vote/update_vote_tx_hash",
             post(api::vote::update_vote_tx_hash),
         )
+        .route("/api/vote/status", post(api::vote::status))
+        .route("/api/vote/detail", get(api::vote::detail))
         .layer((TimeoutLayer::new(Duration::from_secs(10)),))
         .layer(CorsLayer::permissive())
         .with_state(app);
