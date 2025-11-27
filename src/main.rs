@@ -110,6 +110,10 @@ async fn main() -> Result<()> {
             "/api/proposal/initiation_vote",
             post(api::proposal::initiation_vote),
         )
+        .route(
+            "/api/proposal/update_state",
+            post(api::proposal::update_state),
+        )
         .route("/api/reply/list", post(api::reply::list))
         .route("/api/like/list", post(api::like::list))
         .route("/api/vote/bind_list", get(api::vote::bind_list))
@@ -128,7 +132,10 @@ async fn main() -> Result<()> {
         )
         .route("/api/vote/status", post(api::vote::status))
         .route("/api/vote/detail", get(api::vote::detail))
-        .layer((TimeoutLayer::new(Duration::from_secs(10)),))
+        .layer((TimeoutLayer::with_status_code(
+            reqwest::StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(10),
+        ),))
         .layer(CorsLayer::permissive())
         .with_state(app);
     common_x::restful::http_serve(args.port, router)

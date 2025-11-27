@@ -5,7 +5,7 @@ edition = "2024"
 authors = ["JLer <jlerxky@live.com>"]
 
 [dependencies]
-axum-extra = { version = "0.10", features = ["typed-header"] }
+axum-extra = { version = "0.12", features = ["typed-header"] }
 base32 = "0.5"
 blake2b-ref = "0.3.1"
 bs58 = "0.5"
@@ -27,7 +27,7 @@ molecule = { version = "0.9", default-features = false, features = [
 ] }
 rand = "0.9"
 reqwest = { version = "0.12", features = ["json"] }
-sea-query = { version = "1.0.0-rc.14", default-features = false, features = [
+sea-query = { version = "1.0.0-rc.20", default-features = false, features = [
     "audit",
     "backend-postgres",
     "derive",

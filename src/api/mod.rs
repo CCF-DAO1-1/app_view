@@ -30,6 +30,7 @@ use crate::{
         proposal::list,
         proposal::detail,
         proposal::initiation_vote,
+        proposal::update_state,
         reply::list,
         like::list,
         vote::bind_list,

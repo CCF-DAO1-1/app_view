@@ -61,6 +61,9 @@ pub async fn get_weight(
             .get("from")
             .and_then(|f| f.as_str())
             .ok_or_eyre("missing from field")?;
+        if from == ckb_addr {
+            continue;
+        }
         let nervos_dao_deposit = get_nervos_dao_deposit(ckb_client, from).await?;
         weight += nervos_dao_deposit;
     }
