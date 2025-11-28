@@ -23,6 +23,7 @@ use crate::{
     lexicon::{
         proposal::{Proposal, ProposalRow, ProposalState, ProposalView},
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteType},
+        vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
     verify_signature,
 };
@@ -266,6 +267,7 @@ pub async fn initiation_vote(
 
     // check proposaler's weight > 10_000_000_000_000
     let ckb_addr = crate::ckb::get_ckb_addr_by_did(&state.ckb_client, &did).await?;
+    // TODO: use ckb
     let weight =
         crate::indexer_bind::get_weight(&state.ckb_client, &state.indexer_bind_url, &ckb_addr)
             .await?;
@@ -289,6 +291,17 @@ pub async fn initiation_vote(
     {
         vote_meta_row
     } else {
+        let (sql, value) = VoteWhitelist::build_select()
+            .order_by(VoteWhitelist::Created, Order::Desc)
+            .limit(1)
+            .build_sqlx(PostgresQueryBuilder);
+        let vote_whitelist_row: VoteWhitelistRow = query_as_with(&sql, value)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| {
+                debug!("fetch vote_whitelist failed: {e}");
+                AppError::ValidateFailed("vote whitelist not found".to_string())
+            })?;
         let now = chrono::Local::now();
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
@@ -297,7 +310,7 @@ pub async fn initiation_vote(
             state: 0,
             tx_hash: None,
             proposal_uri: params.proposal_uri.clone(),
-            whitelist_id: now.format("%Y-%m-%d").to_string(),
+            whitelist_id: vote_whitelist_row.id,
             candidates: vec![
                 "Abstain".to_string(),
                 "Agree".to_string(),

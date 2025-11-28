@@ -112,7 +112,7 @@ pub async fn build_vote_whitelist(
         }
     }
     let smt_root_hash = hex::encode(smt_tree.root().as_slice());
-    let id = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let id = chrono::Local::now().to_rfc3339();
     info!(
         "Built vote whitelist with {} entries, SMT root hash: {}, id: {}",
         vote_whitelist.len(),
