@@ -17,12 +17,14 @@ pub enum Vote {
     Created,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum VoteState {
     #[default]
     Waiting = 0,
-    Active = 1,
-    Invalid = 2,
+    Committed = 1,
+    Timeout = 2,
+    Rejected = 3,
+    Finished = 4,
 }
 
 impl Vote {

@@ -11,44 +11,16 @@ use crate::{
 
 pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job> {
     let app = app.clone();
-    let mut job = Job::new_async(cron, move |uuid, mut l| {
+    let mut job = Job::new_async(cron, move |_uuid, _scheduler| {
         Box::pin({
             let db = app.db.clone();
             let ckb_client = app.ckb_client.clone();
             async move {
-                info!("Job ID: {uuid} run async every day at 0am UTC");
-
                 build_vote_whitelist(db, ckb_client).await;
-
-                let next_tick = l.next_tick_for_job(uuid).await;
-                info!("Next time for job is {:?}", next_tick);
             }
         })
     })?;
-    job.on_start_notification_add(
-        sched,
-        Box::new(|job_id, notification_id, type_of_notification| {
-            Box::pin(async move {
-                info!(
-                    "Job {:?} was started, notification {:?} ran ({:?})",
-                    job_id, notification_id, type_of_notification
-                );
-            })
-        }),
-    )
-    .await?;
-    job.on_stop_notification_add(
-        sched,
-        Box::new(|job_id, notification_id, type_of_notification| {
-            Box::pin(async move {
-                info!(
-                    "Job {:?} was completed, notification {:?} ran ({:?})",
-                    job_id, notification_id, type_of_notification
-                );
-            })
-        }),
-    )
-    .await?;
+
     job.on_removed_notification_add(
         sched,
         Box::new(|job_id, notification_id, type_of_notification| {

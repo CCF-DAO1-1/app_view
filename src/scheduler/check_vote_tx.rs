@@ -7,10 +7,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use crate::{
     AppView,
     ckb::get_tx_status,
-    lexicon::{
-        proposal::{Proposal, ProposalState},
-        vote_meta::{VoteMeta, VoteMetaState},
-    },
+    lexicon::vote::{Vote, VoteState},
 };
 
 pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job> {
@@ -20,7 +17,7 @@ pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job>
             let db = app.db.clone();
             let ckb_client = app.ckb_client.clone();
             async move {
-                check_vote_meta_tx(db, ckb_client).await;
+                check_vote_tx(db, ckb_client).await;
             }
         })
     })?;
@@ -40,23 +37,19 @@ pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job>
     Ok(job)
 }
 
-pub async fn check_vote_meta_tx(
-    db: sqlx::Pool<sqlx::Postgres>,
-    ckb_client: ckb_sdk::CkbRpcAsyncClient,
-) {
+pub async fn check_vote_tx(db: sqlx::Pool<sqlx::Postgres>, ckb_client: ckb_sdk::CkbRpcAsyncClient) {
     let (sql, values) = sea_query::Query::select()
         .columns([
-            (VoteMeta::Table, VoteMeta::Id),
-            (VoteMeta::Table, VoteMeta::TxHash),
-            (VoteMeta::Table, VoteMeta::ProposalUri),
-            (VoteMeta::Table, VoteMeta::Created),
+            (Vote::Table, Vote::Id),
+            (Vote::Table, Vote::TxHash),
+            (Vote::Table, Vote::Created),
         ])
-        .from(VoteMeta::Table)
-        .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Waiting as i32))
+        .from(Vote::Table)
+        .and_where(Expr::col(Vote::State).eq(VoteState::Waiting as i32))
         .build_sqlx(PostgresQueryBuilder);
 
     #[allow(clippy::type_complexity)]
-    let rows: Option<Vec<(i32, Option<String>, String, DateTime<Local>)>> =
+    let rows: Option<Vec<(i32, Option<String>, DateTime<Local>)>> =
         sqlx::query_as_with(&sql, values.clone())
             .fetch_all(&db)
             .await
@@ -66,47 +59,31 @@ pub async fn check_vote_meta_tx(
             })
             .ok();
     if let Some(rows) = rows {
-        for (id, tx_hash, proposal_uri, created) in rows {
+        for (id, tx_hash, created) in rows {
             if let Some(tx_hash) = tx_hash {
                 let tx_status = get_tx_status(&ckb_client, &tx_hash).await;
                 if let Ok(tx_status) = tx_status {
-                    debug!("VoteMeta({id}) tx {tx_hash} status: {tx_status:?}");
+                    debug!("Vote({id}) tx {tx_hash} status: {tx_status:?}");
                     let meta_state = match tx_status {
-                        ckb_jsonrpc_types::Status::Committed => VoteMetaState::Committed,
+                        ckb_jsonrpc_types::Status::Committed => VoteState::Committed,
                         ckb_jsonrpc_types::Status::Pending => continue,
                         ckb_jsonrpc_types::Status::Proposed => continue,
                         ckb_jsonrpc_types::Status::Unknown => {
                             if (chrono::Local::now() - created) > chrono::Duration::minutes(3) {
-                                VoteMetaState::Timeout
+                                VoteState::Timeout
                             } else {
                                 continue;
                             }
                         }
-                        ckb_jsonrpc_types::Status::Rejected => VoteMetaState::Rejected,
+                        ckb_jsonrpc_types::Status::Rejected => VoteState::Rejected,
                     };
                     let (sql, values) = sea_query::Query::update()
-                        .table(VoteMeta::Table)
-                        .value(VoteMeta::State, meta_state as i32)
-                        .and_where(Expr::col(VoteMeta::Id).eq(id))
+                        .table(Vote::Table)
+                        .value(Vote::State, meta_state as i32)
+                        .and_where(Expr::col(Vote::Id).eq(id))
                         .build_sqlx(PostgresQueryBuilder);
                     sqlx::query_with(&sql, values).execute(&db).await.ok();
-                    debug!("VoteMeta({}) tx {} marked as {:?}", id, tx_hash, meta_state);
-
-                    if meta_state == VoteMetaState::Committed {
-                        // update proposal state
-                        let lines = Proposal::update_state(
-                            &db,
-                            &proposal_uri,
-                            ProposalState::InitiationVote as i32,
-                        )
-                        .await
-                        .map_err(|e| error!("update proposal state failed: {e}"))
-                        .unwrap_or(0);
-
-                        if lines > 0 {
-                            debug!("Proposal({proposal_uri}) marked as InitiationVote");
-                        }
-                    }
+                    debug!("Vote({}) tx {} marked as {:?}", id, tx_hash, meta_state);
                 }
             }
         }
