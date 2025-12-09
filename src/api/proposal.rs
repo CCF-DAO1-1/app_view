@@ -22,7 +22,7 @@ use crate::{
     error::AppError,
     lexicon::{
         proposal::{Proposal, ProposalRow, ProposalState, ProposalView},
-        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteType},
+        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
         vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
     verify_signature,
@@ -282,7 +282,7 @@ pub async fn initiation_vote(
 
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::ProposalUri).eq(&proposal_row.uri))
-        .and_where(Expr::col(VoteMeta::VoteType).eq(VoteType::Initiation as i32))
+        .and_where(Expr::col(VoteMeta::ProposalState).eq(ProposalState::InitiationVote as i32))
         .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Waiting as i32))
         .build_sqlx(PostgresQueryBuilder);
     let vote_meta_row = if let Ok(vote_meta_row) = query_as_with::<_, VoteMetaRow, _>(&sql, value)
@@ -305,7 +305,7 @@ pub async fn initiation_vote(
         let now = chrono::Local::now();
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
-            vote_type: 0,
+            proposal_state: ProposalState::InitiationVote as i32,
             vote_request_type: 0,
             state: 0,
             tx_hash: None,

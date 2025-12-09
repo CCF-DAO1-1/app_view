@@ -5,10 +5,7 @@ use sea_query_sqlx::SqlxBinder;
 use serde::Serialize;
 use sqlx::{Executor, Pool, Postgres, Row, query, query_with};
 
-#[derive(Debug, Clone, Copy)]
-pub enum VoteType {
-    Initiation = 0,
-}
+use crate::lexicon::proposal::ProposalState;
 
 #[derive(Debug, Clone, Copy)]
 pub enum VoteRequestType {
@@ -22,7 +19,7 @@ pub enum VoteRequestType {
 pub enum VoteMeta {
     Table,
     Id,
-    VoteType,
+    ProposalState,
     VoteRequestType,
     State,
     TxHash,
@@ -58,10 +55,10 @@ impl VoteMeta {
                     .primary_key(),
             )
             .col(
-                ColumnDef::new(Self::VoteType)
+                ColumnDef::new(Self::ProposalState)
                     .integer()
                     .not_null()
-                    .default(0),
+                    .default(ProposalState::InitiationVote as i32),
             )
             .col(
                 ColumnDef::new(Self::VoteRequestType)
@@ -116,7 +113,7 @@ impl VoteMeta {
         let (sql, values) = sea_query::Query::insert()
             .into_table(Self::Table)
             .columns([
-                Self::VoteType,
+                Self::ProposalState,
                 Self::VoteRequestType,
                 Self::State,
                 Self::TxHash,
@@ -129,7 +126,7 @@ impl VoteMeta {
                 Self::Created,
             ])
             .values([
-                row.vote_type.into(),
+                row.proposal_state.into(),
                 row.vote_request_type.into(),
                 row.state.into(),
                 row.tx_hash.clone().into(),
@@ -165,7 +162,7 @@ impl VoteMeta {
         sea_query::Query::select()
             .columns([
                 (Self::Table, Self::Id),
-                (Self::Table, Self::VoteType),
+                (Self::Table, Self::ProposalState),
                 (Self::Table, Self::VoteRequestType),
                 (Self::Table, Self::State),
                 (Self::Table, Self::TxHash),
@@ -185,7 +182,7 @@ impl VoteMeta {
 #[derive(sqlx::FromRow, Debug, Serialize)]
 pub struct VoteMetaRow {
     pub id: i32,
-    pub vote_type: i32,
+    pub proposal_state: i32,
     pub vote_request_type: i32,
     pub state: i32,
     pub tx_hash: Option<String>,

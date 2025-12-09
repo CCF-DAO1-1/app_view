@@ -278,7 +278,7 @@ pub async fn create_vote_meta(
     } else {
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
-            vote_type: 0,
+            proposal_state: proposal_sample.state,
             vote_request_type: 0,
             state: 0,
             tx_hash: None,
