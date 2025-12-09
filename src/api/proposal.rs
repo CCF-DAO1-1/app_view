@@ -137,10 +137,12 @@ pub async fn detail(
         })?;
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::ProposalUri).eq(&row.uri))
+        .and_where(Expr::col(VoteMeta::ProposalState).eq(row.state))
         .and_where(
             Expr::col(VoteMeta::State)
                 .eq(VoteMetaState::Waiting as i32)
-                .or(Expr::col(VoteMeta::State).eq(VoteMetaState::Committed as i32)),
+                .or(Expr::col(VoteMeta::State).eq(VoteMetaState::Committed as i32))
+                .or(Expr::col(VoteMeta::State).eq(VoteMetaState::Finished as i32)),
         )
         .build_sqlx(PostgresQueryBuilder);
     let vote_meta_row: Option<VoteMetaRow> = query_as_with::<_, VoteMetaRow, _>(&sql, value)
