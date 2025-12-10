@@ -1,6 +1,6 @@
 [package]
 name = "dao"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2024"
 authors = ["JLer <jlerxky@live.com>"]
 
@@ -27,7 +27,7 @@ molecule = { version = "0.9", default-features = false, features = [
 ] }
 rand = "0.9"
 reqwest = { version = "0.12", features = ["json"] }
-sea-query = { version = "1.0.0-rc.20", default-features = false, features = [
+sea-query = { version = "1.0.0-rc", default-features = false, features = [
     "audit",
     "backend-postgres",
     "derive",
@@ -39,7 +39,7 @@ sea-query = { version = "1.0.0-rc.20", default-features = false, features = [
     "with-rust_decimal",
     "with-uuid",
 ] }
-sea-query-sqlx = { version = "0.8.0-rc.9", features = [
+sea-query-sqlx = { version = "0.8.0-rc", features = [
     "sqlx-postgres",
     "with-chrono",
     "with-json",
