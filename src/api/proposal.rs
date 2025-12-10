@@ -198,6 +198,7 @@ pub async fn update_state(
 #[serde(default)]
 pub struct InitiationParams {
     pub proposal_uri: String,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
@@ -208,6 +209,21 @@ pub struct InitiationBody {
     #[validate(length(equal = 57))]
     pub signing_key_did: String,
     pub signed_bytes: String,
+}
+
+#[test]
+fn test_timestamp() {
+    let timestamp = chrono::Utc::now() + chrono::Duration::minutes(5);
+    println!("timestamp: {}", timestamp);
+    let now = chrono::Utc::now();
+    println!("now: {}", now);
+    let delta = (now - timestamp).abs();
+    println!("delta: {}", delta);
+    if delta < chrono::Duration::minutes(5) {
+        println!("valid");
+    } else {
+        println!("invalid");
+    }
 }
 
 #[utoipa::path(
@@ -229,6 +245,13 @@ pub async fn initiation_vote(
         signing_key_did,
         signed_bytes,
     } = body;
+
+    let timestamp = chrono::DateTime::from_timestamp_secs(params.timestamp).unwrap_or_default();
+    let now = chrono::Utc::now();
+    let delta = (now - timestamp).abs();
+    if delta < chrono::Duration::minutes(5) {
+        return Err(AppError::ValidateFailed("timestamp too old".to_string()));
+    }
 
     let (sql, values) = Proposal::build_select(None)
         .and_where(Expr::col(Proposal::Uri).eq(&params.proposal_uri))

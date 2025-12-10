@@ -210,6 +210,7 @@ pub struct CreateVoteMetaParams {
     pub candidates: Vec<String>,
     pub start_time: u64,
     pub end_time: u64,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
@@ -237,6 +238,14 @@ pub async fn create_vote_meta(
         .fetch_one(&state.db)
         .await
         .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    let timestamp =
+        chrono::DateTime::from_timestamp_secs(body.params.timestamp).unwrap_or_default();
+    let now = chrono::Utc::now();
+    let delta = (now - timestamp).abs();
+    if delta < chrono::Duration::minutes(5) {
+        return Err(AppError::ValidateFailed("timestamp too old".to_string()));
+    }
 
     verify_signature(
         &body.did,
@@ -330,6 +339,7 @@ fn test() {
 pub struct UpdateTxParams {
     pub id: i32,
     pub tx_hash: String,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
@@ -349,6 +359,14 @@ pub async fn update_meta_tx_hash(
 ) -> Result<impl IntoResponse, AppError> {
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let timestamp =
+        chrono::DateTime::from_timestamp_secs(body.params.timestamp).unwrap_or_default();
+    let now = chrono::Utc::now();
+    let delta = (now - timestamp).abs();
+    if delta < chrono::Duration::minutes(5) {
+        return Err(AppError::ValidateFailed("timestamp too old".to_string()));
+    }
 
     verify_signature(
         &body.did,
@@ -388,6 +406,7 @@ pub struct UpdateVoteTxParams {
     pub id: i32,
     pub tx_hash: String,
     pub candidates_index: i32,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
@@ -407,6 +426,14 @@ pub async fn update_vote_tx_hash(
 ) -> Result<impl IntoResponse, AppError> {
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let timestamp =
+        chrono::DateTime::from_timestamp_secs(body.params.timestamp).unwrap_or_default();
+    let now = chrono::Utc::now();
+    let delta = (now - timestamp).abs();
+    if delta < chrono::Duration::minutes(5) {
+        return Err(AppError::ValidateFailed("timestamp too old".to_string()));
+    }
 
     verify_signature(
         &body.did,
@@ -437,6 +464,7 @@ pub async fn update_vote_tx_hash(
 pub struct CreateVoteParams {
     pub vote_meta_id: i32,
     pub candidates_index: i32,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
@@ -456,6 +484,14 @@ pub async fn _create_vote(
 ) -> Result<impl IntoResponse, AppError> {
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let timestamp =
+        chrono::DateTime::from_timestamp_secs(body.params.timestamp).unwrap_or_default();
+    let now = chrono::Utc::now();
+    let delta = (now - timestamp).abs();
+    if delta < chrono::Duration::minutes(5) {
+        return Err(AppError::ValidateFailed("timestamp too old".to_string()));
+    }
 
     verify_signature(
         &body.did,
@@ -656,6 +692,7 @@ fn test_unsigned_bytes() {
         candidates: vec![],
         start_time: 1,
         end_time: 1,
+        timestamp: chrono::Utc::now().timestamp(),
     };
     let unsigned_bytes = serde_ipld_dagcbor::to_vec(&msg).unwrap();
     println!("unsigned_bytes: {:?}", unsigned_bytes);
