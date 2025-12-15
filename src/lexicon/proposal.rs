@@ -12,8 +12,26 @@ use crate::lexicon::vote_meta::VoteMetaRow;
 pub enum ProposalState {
     End = 0,
     #[default]
-    Draft = 1,
-    InitiationVote = 2,
+    Draft,
+    // 立项投票
+    InitiationVote,
+    // 等待启动金
+    WaitingForStartFund,
+    // 项目执行中：里程碑过程
+    InProgress,
+    // 里程碑验收投票
+    AcceptanceVote,
+    // 延期投票
+    DelayVote,
+    // 等待验收报告
+    WaitingForAcceptanceReport,
+    // 项目完成
+    Completed,
+
+    // 复核投票
+    ReexamineVote,
+    // 整改投票
+    RectificationVote,
 }
 
 #[derive(Iden, Debug, Clone, Copy)]
@@ -25,6 +43,7 @@ pub enum Proposal {
     Record,
     State,
     Updated,
+    ReceiverAddr,
 }
 
 impl Proposal {
@@ -48,6 +67,13 @@ impl Proposal {
                     .not_null()
                     .default(Expr::current_timestamp()),
             )
+            .col(ColumnDef::new(Self::ReceiverAddr).string())
+            .build(PostgresQueryBuilder);
+        db.execute(query(&sql)).await?;
+
+        let sql = sea_query::Table::alter()
+            .table(Self::Table)
+            .add_column_if_not_exists(ColumnDef::new(Self::ReceiverAddr).string())
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
         Ok(())
@@ -124,6 +150,7 @@ impl Proposal {
             (Proposal::Table, Proposal::Record),
             (Proposal::Table, Proposal::State),
             (Proposal::Table, Proposal::Updated),
+            (Proposal::Table, Proposal::ReceiverAddr),
         ])
         .expr(Expr::cust("(select count(\"like\".\"uri\") from \"like\" where \"like\".\"to\" = \"proposal\".\"uri\") as like_count"))
         .expr(if let Some(viewer) = viewer {
@@ -140,6 +167,24 @@ impl Proposal {
             .table(Self::Table)
             .values([
                 (Self::State, state.into()),
+                (Self::Updated, Expr::current_timestamp()),
+            ])
+            .and_where(Expr::col(Self::Uri).eq(uri))
+            .build_sqlx(PostgresQueryBuilder);
+
+        let lines = db.execute(query_with(&sql, values)).await?.rows_affected();
+        Ok(lines)
+    }
+
+    pub async fn update_receiver_addr(
+        db: &Pool<Postgres>,
+        uri: &str,
+        receiver_addr: &str,
+    ) -> Result<u64> {
+        let (sql, values) = sea_query::Query::update()
+            .table(Self::Table)
+            .values([
+                (Self::ReceiverAddr, receiver_addr.into()),
                 (Self::Updated, Expr::current_timestamp()),
             ])
             .and_where(Expr::col(Self::Uri).eq(uri))
@@ -168,6 +213,7 @@ pub struct ProposalRow {
     pub record: Value,
     pub state: i32,
     pub updated: DateTime<Local>,
+    pub receiver_addr: Option<String>,
     pub like_count: i64,
     pub liked: bool,
 }
@@ -180,6 +226,7 @@ pub struct ProposalView {
     pub record: Value,
     pub state: i32,
     pub updated: DateTime<Local>,
+    pub receiver_addr: Option<String>,
     pub like_count: String,
     pub liked: bool,
     pub vote_meta: Option<VoteMetaRow>,
@@ -193,6 +240,7 @@ impl ProposalView {
             author,
             record: row.record,
             updated: row.updated,
+            receiver_addr: row.receiver_addr,
             state: row.state,
             like_count: row.like_count.to_string(),
             liked: row.liked,

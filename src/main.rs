@@ -114,6 +114,10 @@ async fn main() -> Result<()> {
             "/api/proposal/update_state",
             post(api::proposal::update_state),
         )
+        .route(
+            "/api/proposal/update_receiver_addr",
+            post(api::proposal::update_receiver_addr),
+        )
         .route("/api/reply/list", post(api::reply::list))
         .route("/api/like/list", post(api::like::list))
         .route("/api/vote/bind_list", get(api::vote::bind_list))

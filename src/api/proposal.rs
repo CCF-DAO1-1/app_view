@@ -18,14 +18,14 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    api::{ToTimestamp, build_author, vote::build_vote_meta},
+    api::{SignedBody, SignedParam, ToTimestamp, build_author, vote::build_vote_meta},
     error::AppError,
     lexicon::{
+        administrator::{Administrator, AdministratorRow},
         proposal::{Proposal, ProposalRow, ProposalState, ProposalView},
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
         vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
-    verify_signature,
 };
 
 #[derive(Debug, Validate, Deserialize, ToSchema)]
@@ -201,14 +201,10 @@ pub struct InitiationParams {
     pub timestamp: i64,
 }
 
-#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
-#[serde(default)]
-pub struct InitiationBody {
-    pub params: InitiationParams,
-    pub did: String,
-    #[validate(length(equal = 57))]
-    pub signing_key_did: String,
-    pub signed_bytes: String,
+impl SignedParam for InitiationParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 #[test]
@@ -234,24 +230,16 @@ fn test_timestamp() {
 )]
 pub async fn initiation_vote(
     State(state): State<AppView>,
-    Json(body): Json<InitiationBody>,
+    Json(body): Json<SignedBody<InitiationParams>>,
 ) -> Result<impl IntoResponse, AppError> {
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let InitiationBody {
-        params,
-        did,
-        signing_key_did,
-        signed_bytes,
-    } = body;
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let timestamp = chrono::DateTime::from_timestamp_secs(params.timestamp).unwrap_or_default();
-    let now = chrono::Utc::now();
-    let delta = (now - timestamp).abs();
-    if delta < chrono::Duration::minutes(5) {
-        return Err(AppError::ValidateFailed("timestamp too old".to_string()));
-    }
+    let SignedBody::<InitiationParams> { params, did, .. } = body;
 
     let (sql, values) = Proposal::build_select(None)
         .and_where(Expr::col(Proposal::Uri).eq(&params.proposal_uri))
@@ -278,17 +266,6 @@ pub async fn initiation_vote(
     }
 
     // TODO check AMA completed
-
-    // verify signature
-    verify_signature(
-        &did,
-        &state.indexer_did_url,
-        &signing_key_did,
-        &signed_bytes,
-        &params,
-    )
-    .await
-    .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
     // check proposaler's weight > 10_000_000_000_000
     let ckb_addr = crate::ckb::get_ckb_addr_by_did(&state.ckb_client, &did).await?;
@@ -365,5 +342,56 @@ pub async fn initiation_vote(
     Ok(ok(json!({
         "vote_meta": vote_meta_row,
         "outputsData": outputs_data
+    })))
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct ReceiverAddrParams {
+    pub proposal_uri: String,
+    pub receiver_addr: String,
+    pub timestamp: i64,
+}
+
+impl SignedParam for ReceiverAddrParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/proposal/update_receiver_addr",
+    params(StateQuery),
+    description = "更新项目金库地址"
+)]
+pub async fn update_receiver_addr(
+    State(state): State<AppView>,
+    Json(body): Json<SignedBody<ReceiverAddrParams>>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    Proposal::update_receiver_addr(
+        &state.db,
+        &body.params.proposal_uri,
+        &body.params.receiver_addr,
+    )
+    .await?;
+
+    Ok(ok(json!({
+        "vote_meta": {},
     })))
 }

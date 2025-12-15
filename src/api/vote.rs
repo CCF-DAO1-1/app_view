@@ -19,6 +19,7 @@ use validator::Validate;
 
 use crate::{
     AppView,
+    api::{SignedBody, SignedParam},
     ckb::{get_ckb_addr_by_did, get_vote_result},
     error::AppError,
     lexicon::{
@@ -30,7 +31,6 @@ use crate::{
     },
     molecules::{self, VoteProof},
     smt::{Blake2bHasher, CkbSMT, SMT_VALUE},
-    verify_signature,
 };
 
 #[derive(Debug, Default, Validate, Deserialize, IntoParams)]
@@ -213,20 +213,16 @@ pub struct CreateVoteMetaParams {
     pub timestamp: i64,
 }
 
-#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
-#[serde(default)]
-pub struct CreateVoteMetaBody {
-    pub params: CreateVoteMetaParams,
-    pub did: String,
-    #[validate(length(equal = 57))]
-    pub signing_key_did: String,
-    pub signed_bytes: String,
+impl SignedParam for CreateVoteMetaParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 #[utoipa::path(post, path = "/api/vote/create_vote_meta")]
 pub async fn create_vote_meta(
     State(state): State<AppView>,
-    Json(body): Json<CreateVoteMetaBody>,
+    Json(body): Json<SignedBody<CreateVoteMetaParams>>,
 ) -> Result<impl IntoResponse, AppError> {
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
@@ -239,23 +235,9 @@ pub async fn create_vote_meta(
         .await
         .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
 
-    let timestamp =
-        chrono::DateTime::from_timestamp_secs(body.params.timestamp).unwrap_or_default();
-    let now = chrono::Utc::now();
-    let delta = (now - timestamp).abs();
-    if delta < chrono::Duration::minutes(5) {
-        return Err(AppError::ValidateFailed("timestamp too old".to_string()));
-    }
-
-    verify_signature(
-        &body.did,
-        &state.indexer_did_url,
-        &body.signing_key_did,
-        &body.signed_bytes,
-        &body.params,
-    )
-    .await
-    .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
     let (sql, value) = sea_query::Query::select()
         .columns([
@@ -342,41 +324,23 @@ pub struct UpdateTxParams {
     pub timestamp: i64,
 }
 
-#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
-#[serde(default)]
-pub struct UpdateTxBody {
-    pub params: UpdateTxParams,
-    pub did: String,
-    #[validate(length(equal = 57))]
-    pub signing_key_did: String,
-    pub signed_bytes: String,
+impl SignedParam for UpdateTxParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 #[utoipa::path(post, path = "/api/vote/update_meta_tx_hash")]
 pub async fn update_meta_tx_hash(
     State(state): State<AppView>,
-    Json(body): Json<UpdateTxBody>,
+    Json(body): Json<SignedBody<UpdateTxParams>>,
 ) -> Result<impl IntoResponse, AppError> {
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let timestamp =
-        chrono::DateTime::from_timestamp_secs(body.params.timestamp).unwrap_or_default();
-    let now = chrono::Utc::now();
-    let delta = (now - timestamp).abs();
-    if delta < chrono::Duration::minutes(5) {
-        return Err(AppError::ValidateFailed("timestamp too old".to_string()));
-    }
-
-    verify_signature(
-        &body.did,
-        &state.indexer_did_url,
-        &body.signing_key_did,
-        &body.signed_bytes,
-        &body.params,
-    )
-    .await
-    .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::Id).eq(body.params.id))
@@ -409,41 +373,23 @@ pub struct UpdateVoteTxParams {
     pub timestamp: i64,
 }
 
-#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
-#[serde(default)]
-pub struct UpdateVoteTxBody {
-    pub params: UpdateVoteTxParams,
-    pub did: String,
-    #[validate(length(equal = 57))]
-    pub signing_key_did: String,
-    pub signed_bytes: String,
+impl SignedParam for UpdateVoteTxParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 #[utoipa::path(post, path = "/api/vote/update_vote_tx_hash")]
 pub async fn update_vote_tx_hash(
     State(state): State<AppView>,
-    Json(body): Json<UpdateVoteTxBody>,
+    Json(body): Json<SignedBody<UpdateVoteTxParams>>,
 ) -> Result<impl IntoResponse, AppError> {
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let timestamp =
-        chrono::DateTime::from_timestamp_secs(body.params.timestamp).unwrap_or_default();
-    let now = chrono::Utc::now();
-    let delta = (now - timestamp).abs();
-    if delta < chrono::Duration::minutes(5) {
-        return Err(AppError::ValidateFailed("timestamp too old".to_string()));
-    }
-
-    verify_signature(
-        &body.did,
-        &state.indexer_did_url,
-        &body.signing_key_did,
-        &body.signed_bytes,
-        &body.params,
-    )
-    .await
-    .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
     let mut vote_row = VoteRow {
         id: -1,
@@ -467,41 +413,23 @@ pub struct CreateVoteParams {
     pub timestamp: i64,
 }
 
-#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
-#[serde(default)]
-pub struct CreateVoteBody {
-    pub params: CreateVoteParams,
-    pub did: String,
-    #[validate(length(equal = 57))]
-    pub signing_key_did: String,
-    pub signed_bytes: String,
+impl SignedParam for CreateVoteParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 // #[utoipa::path(post, path = "/api/vote/create_vote")]
 pub async fn _create_vote(
     State(state): State<AppView>,
-    Json(body): Json<CreateVoteBody>,
+    Json(body): Json<SignedBody<CreateVoteParams>>,
 ) -> Result<impl IntoResponse, AppError> {
     body.validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let timestamp =
-        chrono::DateTime::from_timestamp_secs(body.params.timestamp).unwrap_or_default();
-    let now = chrono::Utc::now();
-    let delta = (now - timestamp).abs();
-    if delta < chrono::Duration::minutes(5) {
-        return Err(AppError::ValidateFailed("timestamp too old".to_string()));
-    }
-
-    verify_signature(
-        &body.did,
-        &state.indexer_did_url,
-        &body.signing_key_did,
-        &body.signed_bytes,
-        &body.params,
-    )
-    .await
-    .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
     let mut vote_row = VoteRow {
         id: -1,
