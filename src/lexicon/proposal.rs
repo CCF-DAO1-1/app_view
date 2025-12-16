@@ -34,6 +34,25 @@ pub enum ProposalState {
     RectificationVote,
 }
 
+impl ProposalState {
+    pub const fn from(value: i32) -> Self {
+        match value {
+            0 => ProposalState::End,
+            1 => ProposalState::Draft,
+            2 => ProposalState::InitiationVote,
+            3 => ProposalState::WaitingForStartFund,
+            4 => ProposalState::InProgress,
+            5 => ProposalState::AcceptanceVote,
+            6 => ProposalState::DelayVote,
+            7 => ProposalState::WaitingForAcceptanceReport,
+            8 => ProposalState::Completed,
+            9 => ProposalState::ReexamineVote,
+            10 => ProposalState::RectificationVote,
+            _ => ProposalState::Draft,
+        }
+    }
+}
+
 #[derive(Iden, Debug, Clone, Copy)]
 pub enum Proposal {
     Table,
@@ -185,6 +204,10 @@ impl Proposal {
             .table(Self::Table)
             .values([
                 (Self::ReceiverAddr, receiver_addr.into()),
+                (
+                    Self::State,
+                    (ProposalState::WaitingForStartFund as i32).into(),
+                ),
                 (Self::Updated, Expr::current_timestamp()),
             ])
             .and_where(Expr::col(Self::Uri).eq(uri))

@@ -22,8 +22,8 @@ use crate::{
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
-        proposal::{Proposal, ProposalRow, ProposalState, ProposalView},
-        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
+        proposal::{Proposal, ProposalRow, ProposalSample, ProposalState, ProposalView},
+        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteResult, VoteResults},
         vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
 };
@@ -308,7 +308,6 @@ pub async fn initiation_vote(
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             proposal_state: ProposalState::InitiationVote as i32,
-            vote_request_type: 0,
             state: 0,
             tx_hash: None,
             proposal_uri: params.proposal_uri.clone(),
@@ -321,6 +320,7 @@ pub async fn initiation_vote(
             start_time: now,
             end_time: now.checked_add_days(chrono::Days::new(7)).unwrap(),
             creater: did.clone(),
+            results: None,
             created: now,
         };
 
@@ -384,6 +384,45 @@ pub async fn update_receiver_addr(
         .await
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
+    let (sql, value) = sea_query::Query::select()
+        .columns([
+            (Proposal::Table, Proposal::Uri),
+            (Proposal::Table, Proposal::Cid),
+            (Proposal::Table, Proposal::Repo),
+            (Proposal::Table, Proposal::Record),
+            (Proposal::Table, Proposal::State),
+            (Proposal::Table, Proposal::Updated),
+        ])
+        .from(Proposal::Table)
+        .and_where(Expr::col(Proposal::Uri).eq(body.params.proposal_uri.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let proposal_sample: ProposalSample = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("proposal not found: {e}")))?;
+
+    if proposal_sample.state != (ProposalState::InitiationVote as i32) {
+        return Err(AppError::ValidateFailed(
+            "only InitiationVote state can update receiver addr".to_string(),
+        ));
+    }
+
+    let (sql, value) = VoteMeta::build_select()
+        .and_where(Expr::col(VoteMeta::ProposalUri).eq(&body.params.proposal_uri))
+        .and_where(Expr::col(VoteMeta::ProposalState).eq(ProposalState::InitiationVote as i32))
+        .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Finished as i32))
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_meta_row: VoteMetaRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("vote meta not found: {e}")))?;
+
+    if vote_result(&vote_meta_row, &proposal_sample) != VoteResult::Agree {
+        return Err(AppError::ValidateFailed(
+            "only Agree vote result can update receiver addr".to_string(),
+        ));
+    }
+
     Proposal::update_receiver_addr(
         &state.db,
         &body.params.proposal_uri,
@@ -394,4 +433,83 @@ pub async fn update_receiver_addr(
     Ok(ok(json!({
         "vote_meta": {},
     })))
+}
+
+pub fn vote_result(vote_meta: &VoteMetaRow, proposal: &ProposalSample) -> VoteResult {
+    if let Some(results) = &vote_meta.results
+        && let Ok(results) = serde_json::from_value::<VoteResults>(results.clone())
+        && let Some(proposal_type) = proposal
+            .record
+            .pointer("/data/proposalType")
+            .and_then(|t| t.as_str())
+    {
+        match ProposalState::from(vote_meta.proposal_state) {
+            ProposalState::InitiationVote | ProposalState::ReexamineVote => {
+                if proposal_type == "BudgetProposal" {
+                    if results.valid_weight_sum >= 1_8500_0000_0000_0000 {
+                        let agree =
+                            results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
+                        if agree >= 0.67 {
+                            return VoteResult::Agree;
+                        } else {
+                            return VoteResult::Against;
+                        }
+                    } else {
+                        return VoteResult::Failed;
+                    }
+                } else if let Some(proposal_budget) = proposal
+                    .record
+                    .pointer("/data/budget")
+                    .and_then(|t| t.as_u64())
+                {
+                    if results.valid_weight_sum >= (proposal_budget * 3_0000_0000) {
+                        let agree =
+                            results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
+                        if agree >= 0.51 {
+                            return VoteResult::Agree;
+                        } else {
+                            return VoteResult::Against;
+                        }
+                    } else {
+                        return VoteResult::Failed;
+                    }
+                }
+            }
+            ProposalState::AcceptanceVote
+            | ProposalState::DelayVote
+            | ProposalState::RectificationVote => {
+                if proposal_type == "BudgetProposal" {
+                    if results.valid_weight_sum >= 6200_0000_0000_0000 {
+                        let agree =
+                            results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
+                        if agree > 0.67 {
+                            return VoteResult::Agree;
+                        } else {
+                            return VoteResult::Against;
+                        }
+                    } else {
+                        return VoteResult::Failed;
+                    }
+                } else if let Some(proposal_budget) = proposal
+                    .record
+                    .pointer("/data/budget")
+                    .and_then(|t| t.as_u64())
+                {
+                    if results.valid_weight_sum >= (proposal_budget * 1_0000_0000) {
+                        let agree =
+                            results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
+                        if agree > 0.51 {
+                            return VoteResult::Agree;
+                        } else {
+                            return VoteResult::Against;
+                        }
+                    } else {
+                        return VoteResult::Failed;
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+    VoteResult::Voting
 }

@@ -270,7 +270,6 @@ pub async fn create_vote_meta(
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             proposal_state: proposal_sample.state,
-            vote_request_type: 0,
             state: 0,
             tx_hash: None,
             proposal_uri: body.params.proposal_uri.clone(),
@@ -288,6 +287,7 @@ pub async fn create_vote_meta(
                 )
                 .into(),
             creater: body.did.clone(),
+            results: None,
             created: chrono::Local::now(),
         };
 

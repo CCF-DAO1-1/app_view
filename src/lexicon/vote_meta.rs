@@ -2,25 +2,17 @@ use chrono::{DateTime, Local};
 use color_eyre::Result;
 use sea_query::{ColumnDef, ColumnType, Expr, ExprTrait, Iden, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::{Executor, Pool, Postgres, Row, query, query_with};
 
 use crate::lexicon::proposal::ProposalState;
-
-#[derive(Debug, Clone, Copy)]
-pub enum VoteRequestType {
-    Default = 0,
-    Quick = 1,
-    Sample = 2,
-    Hard = 3,
-}
 
 #[derive(Iden, Debug, Clone, Copy)]
 pub enum VoteMeta {
     Table,
     Id,
     ProposalState,
-    VoteRequestType,
     State,
     TxHash,
     ProposalUri,
@@ -29,6 +21,7 @@ pub enum VoteMeta {
     StartTime,
     EndTime,
     Creater,
+    Results,
     Created,
 }
 
@@ -60,12 +53,6 @@ impl VoteMeta {
                     .not_null()
                     .default(ProposalState::InitiationVote as i32),
             )
-            .col(
-                ColumnDef::new(Self::VoteRequestType)
-                    .integer()
-                    .not_null()
-                    .default(0),
-            )
             .col(ColumnDef::new(Self::State).integer().not_null().default(0))
             .col(ColumnDef::new(Self::TxHash).string())
             .col(ColumnDef::new(Self::ProposalUri).string().not_null())
@@ -87,6 +74,7 @@ impl VoteMeta {
                     .not_null()
                     .default(""),
             )
+            .col(ColumnDef::new(Self::Results).json_binary())
             .col(
                 ColumnDef::new(Self::Created)
                     .timestamp_with_time_zone()
@@ -98,12 +86,7 @@ impl VoteMeta {
 
         let sql = sea_query::Table::alter()
             .table(Self::Table)
-            .add_column_if_not_exists(
-                ColumnDef::new(Self::VoteRequestType)
-                    .integer()
-                    .not_null()
-                    .default(0),
-            )
+            .add_column_if_not_exists(ColumnDef::new(Self::Results).json_binary())
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
         Ok(())
@@ -114,7 +97,6 @@ impl VoteMeta {
             .into_table(Self::Table)
             .columns([
                 Self::ProposalState,
-                Self::VoteRequestType,
                 Self::State,
                 Self::TxHash,
                 Self::ProposalUri,
@@ -123,11 +105,11 @@ impl VoteMeta {
                 Self::StartTime,
                 Self::EndTime,
                 Self::Creater,
+                Self::Results,
                 Self::Created,
             ])
             .values([
                 row.proposal_state.into(),
-                row.vote_request_type.into(),
                 row.state.into(),
                 row.tx_hash.clone().into(),
                 row.proposal_uri.clone().into(),
@@ -136,6 +118,7 @@ impl VoteMeta {
                 row.start_time.into(),
                 row.end_time.into(),
                 row.creater.clone().into(),
+                row.results.clone().into(),
                 Expr::current_timestamp(),
             ])?
             .returning_col(Self::Id)
@@ -158,12 +141,22 @@ impl VoteMeta {
         Ok(())
     }
 
+    pub async fn update_results(db: &Pool<Postgres>, id: i32, results: &str) -> Result<()> {
+        let (sql, values) = sea_query::Query::update()
+            .table(Self::Table)
+            .value(Self::Results, results)
+            .and_where(Expr::col(Self::Id).eq(id))
+            .build_sqlx(PostgresQueryBuilder);
+
+        db.execute(query_with(&sql, values)).await?;
+        Ok(())
+    }
+
     pub fn build_select() -> sea_query::SelectStatement {
         sea_query::Query::select()
             .columns([
                 (Self::Table, Self::Id),
                 (Self::Table, Self::ProposalState),
-                (Self::Table, Self::VoteRequestType),
                 (Self::Table, Self::State),
                 (Self::Table, Self::TxHash),
                 (Self::Table, Self::ProposalUri),
@@ -172,6 +165,7 @@ impl VoteMeta {
                 (Self::Table, Self::StartTime),
                 (Self::Table, Self::EndTime),
                 (Self::Table, Self::Creater),
+                (Self::Table, Self::Results),
                 (Self::Table, Self::Created),
             ])
             .from(Self::Table)
@@ -183,7 +177,6 @@ impl VoteMeta {
 pub struct VoteMetaRow {
     pub id: i32,
     pub proposal_state: i32,
-    pub vote_request_type: i32,
     pub state: i32,
     pub tx_hash: Option<String>,
     pub proposal_uri: String,
@@ -192,5 +185,24 @@ pub struct VoteMetaRow {
     pub start_time: DateTime<Local>,
     pub end_time: DateTime<Local>,
     pub creater: String,
+    pub results: Option<Value>,
     pub created: DateTime<Local>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VoteResults {
+    pub vote_sum: u64,
+    pub valid_vote_sum: u64,
+    pub weight_sum: u64,
+    pub valid_weight_sum: u64,
+    pub valid_votes: Vec<Vec<(String, u64)>>,
+    pub candidate_votes: Vec<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum VoteResult {
+    Voting,
+    Agree,
+    Against,
+    Failed,
 }
