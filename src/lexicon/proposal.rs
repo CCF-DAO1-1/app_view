@@ -23,6 +23,8 @@ pub enum ProposalState {
     AcceptanceVote,
     // 延期投票
     DelayVote,
+    // 进度复核投票
+    ReviewVote,
     // 等待验收报告
     WaitingForAcceptanceReport,
     // 项目完成
@@ -44,10 +46,11 @@ impl ProposalState {
             4 => ProposalState::InProgress,
             5 => ProposalState::AcceptanceVote,
             6 => ProposalState::DelayVote,
-            7 => ProposalState::WaitingForAcceptanceReport,
-            8 => ProposalState::Completed,
-            9 => ProposalState::ReexamineVote,
-            10 => ProposalState::RectificationVote,
+            7 => ProposalState::ReviewVote,
+            8 => ProposalState::WaitingForAcceptanceReport,
+            9 => ProposalState::Completed,
+            10 => ProposalState::ReexamineVote,
+            11 => ProposalState::RectificationVote,
             _ => ProposalState::Draft,
         }
     }
