@@ -5,6 +5,7 @@ pub mod reply;
 pub mod repo;
 pub mod timeline;
 pub mod vote;
+pub mod task;
 
 use color_eyre::eyre::{OptionExt, eyre};
 use k256::ecdsa::{Signature, VerifyingKey, signature::Verifier};

@@ -23,6 +23,7 @@ use crate::{
     lexicon::{
         administrator::{Administrator, AdministratorRow},
         proposal::{Proposal, ProposalRow, ProposalSample, ProposalState, ProposalView},
+        task::{Task, TaskRow, TaskState, TaskType},
         timeline::{Timeline, TimelineRow, TimelineType},
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteResult, VoteResults},
         vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
@@ -430,6 +431,30 @@ pub async fn update_receiver_addr(
         &body.params.receiver_addr,
     )
     .await?;
+
+    let admins = Administrator::fetch_all(&state.db)
+        .await
+        .iter()
+        .map(|admin| admin.did.clone())
+        .collect();
+    Task::insert(
+        &state.db,
+        &TaskRow {
+            id: 0,
+            task_type: TaskType::SendInitialFund as i32,
+            importance: 1,
+            message: "SendInitialFund".to_string(),
+            target: body.params.proposal_uri.clone(),
+            operators: admins,
+            deadline: chrono::Local::now() + chrono::Duration::days(7),
+            state: TaskState::Unread as i32,
+            updated: chrono::Local::now(),
+            created: chrono::Local::now(),
+        },
+    )
+    .await
+    .map_err(|e| error!("insert task failed: {e}"))
+    .ok();
 
     Timeline::insert(
         &state.db,

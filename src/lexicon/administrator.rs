@@ -49,6 +49,14 @@ impl Administrator {
             .from(Administrator::Table)
             .take()
     }
+
+    pub async fn fetch_all(db: &Pool<Postgres>) -> Vec<AdministratorRow> {
+        let (sql, values) = Self::build_select().build_sqlx(PostgresQueryBuilder);
+        sqlx::query_as_with(&sql, values)
+            .fetch_all(db)
+            .await
+            .unwrap_or_default()
+    }
 }
 
 #[derive(sqlx::FromRow, Debug, Serialize)]

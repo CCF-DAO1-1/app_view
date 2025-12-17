@@ -16,9 +16,11 @@ use crate::{
     atproto::{NSID_LIKE, NSID_PROPOSAL, NSID_REPLY, direct_writes},
     error::AppError,
     lexicon::{
+        administrator::Administrator,
         like::Like,
         proposal::Proposal,
         reply::Reply,
+        task::{Task, TaskRow, TaskState, TaskType},
         timeline::{Timeline, TimelineRow, TimelineType},
     },
 };
@@ -89,6 +91,47 @@ pub async fn create(
     match record_type {
         NSID_PROPOSAL => {
             Proposal::insert(&state.db, &new_record.repo, new_record.value, uri, cid).await?;
+            let admins = Administrator::fetch_all(&state.db)
+                .await
+                .iter()
+                .map(|admin| admin.did.clone())
+                .collect();
+            Task::insert(
+                &state.db,
+                &TaskRow {
+                    id: 0,
+                    task_type: TaskType::CreateAMA as i32,
+                    importance: 1,
+                    message: "CreateAMA".to_string(),
+                    target: uri.to_string(),
+                    operators: admins,
+                    deadline: chrono::Local::now() + chrono::Duration::days(21),
+                    state: TaskState::Unread as i32,
+                    updated: chrono::Local::now(),
+                    created: chrono::Local::now(),
+                },
+            )
+            .await
+            .map_err(|e| error!("insert task failed: {e}"))
+            .ok();
+            Task::insert(
+                &state.db,
+                &TaskRow {
+                    id: 0,
+                    task_type: TaskType::InitiationVote as i32,
+                    importance: 1,
+                    message: "InitiationVote".to_string(),
+                    target: uri.to_string(),
+                    operators: vec![new_record.repo.clone()],
+                    deadline: chrono::Local::now() + chrono::Duration::days(21),
+                    state: TaskState::Unread as i32,
+                    updated: chrono::Local::now(),
+                    created: chrono::Local::now(),
+                },
+            )
+            .await
+            .map_err(|e| error!("insert task failed: {e}"))
+            .ok();
             Timeline::insert(
                 &state.db,
                 &TimelineRow {

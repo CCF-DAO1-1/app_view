@@ -13,25 +13,34 @@ pub enum ProposalState {
     End = 0,
     #[default]
     Draft,
+
     // 立项投票
     InitiationVote,
+
     // 等待启动金
     WaitingForStartFund,
+
     // 项目执行中：里程碑过程
     InProgress,
+
     // 里程碑验收投票
     AcceptanceVote,
+
     // 延期投票
     DelayVote,
+
     // 进度复核投票
     ReviewVote,
+
     // 等待验收报告
     WaitingForAcceptanceReport,
+
     // 项目完成
     Completed,
 
     // 复核投票
     ReexamineVote,
+    
     // 整改投票
     RectificationVote,
 }
@@ -90,12 +99,6 @@ impl Proposal {
                     .default(Expr::current_timestamp()),
             )
             .col(ColumnDef::new(Self::ReceiverAddr).string())
-            .build(PostgresQueryBuilder);
-        db.execute(query(&sql)).await?;
-
-        let sql = sea_query::Table::alter()
-            .table(Self::Table)
-            .add_column_if_not_exists(ColumnDef::new(Self::ReceiverAddr).string())
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
         Ok(())

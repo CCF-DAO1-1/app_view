@@ -3,12 +3,46 @@ use color_eyre::Result;
 use sea_query::{ColumnDef, ColumnType, Expr, Iden, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::Serialize;
+use serde_json::Value;
 use sqlx::{Executor, Pool, Postgres, Row, query};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub enum TaskType {
     #[default]
     Default = 0,
+
+    // 组织AMA
+    CreateAMA,
+
+    // 提交AMA报告
+    SubmitAMAReport,
+
+    // 发起立项投票
+    InitiationVote,
+
+    // 维护项目金库地址
+    UpdateReceiverAddr,
+
+    // 发送启动金
+    SendInitialFund,
+
+    // 提交里程碑报告
+    SubmitReport,
+
+    // 提交验收报告
+    SubmitAcceptanceReport,
+
+    // 组织复核会议
+    CreateReexamineMeeting,
+
+    // 发起复核投票
+    ReexamineVote,
+
+    // 发起最终整改投票
+    RectificationVote,
+
+    // 提交最终整改报告
+    SubmitRectificationReport,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -81,17 +115,6 @@ impl Task {
             )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
-
-        let sql = sea_query::Table::alter()
-            .table(Self::Table)
-            .add_column_if_not_exists(
-                ColumnDef::new(Self::TaskType)
-                    .integer()
-                    .not_null()
-                    .default(TaskType::default() as i32),
-            )
-            .build(PostgresQueryBuilder);
-        db.execute(query(&sql)).await?;
         Ok(())
     }
 
@@ -99,7 +122,6 @@ impl Task {
         let (sql, values) = sea_query::Query::insert()
             .into_table(Self::Table)
             .columns([
-                Self::Id,
                 Self::TaskType,
                 Self::Importance,
                 Self::Message,
@@ -111,7 +133,6 @@ impl Task {
                 Self::Created,
             ])
             .values([
-                row.id.into(),
                 row.task_type.into(),
                 row.importance.into(),
                 row.message.clone().into(),
@@ -150,14 +171,14 @@ pub struct TaskRow {
 #[derive(Debug, Serialize)]
 #[allow(dead_code)]
 pub struct TaskView {
-    pub id: String,
-    pub task_type: String,
-    pub importance: String,
+    pub id: i32,
+    pub task_type: i32,
+    pub importance: i32,
     pub message: String,
-    pub target: String,
+    pub target: Value,
     pub operators: Vec<String>,
     pub deadline: DateTime<Local>,
-    pub state: String,
+    pub state: i32,
     pub updated: DateTime<Local>,
     pub created: DateTime<Local>,
 }
