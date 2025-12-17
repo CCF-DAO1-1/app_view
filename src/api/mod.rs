@@ -3,6 +3,7 @@ pub mod proposal;
 pub mod record;
 pub mod reply;
 pub mod repo;
+pub mod timeline;
 pub mod vote;
 
 use color_eyre::eyre::{OptionExt, eyre};
@@ -47,6 +48,7 @@ use crate::{
         vote::update_vote_tx_hash,
         vote::status,
         vote::detail,
+        timeline::get,
     ),
     components(schemas(
         record::NewRecord,

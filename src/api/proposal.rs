@@ -23,6 +23,7 @@ use crate::{
     lexicon::{
         administrator::{Administrator, AdministratorRow},
         proposal::{Proposal, ProposalRow, ProposalSample, ProposalState, ProposalView},
+        timeline::{Timeline, TimelineRow, TimelineType},
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteResult, VoteResults},
         vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
@@ -429,6 +430,21 @@ pub async fn update_receiver_addr(
         &body.params.receiver_addr,
     )
     .await?;
+
+    Timeline::insert(
+        &state.db,
+        &TimelineRow {
+            id: 0,
+            timeline_type: TimelineType::UpdateReceiverAddr as i32,
+            message: "UpdateReceiverAddr".to_string(),
+            target: body.params.proposal_uri.clone(),
+            operator: body.did.clone(),
+            timestamp: chrono::Local::now(),
+        },
+    )
+    .await
+    .map_err(|e| error!("insert timeline failed: {e}"))
+    .ok();
 
     Ok(ok(json!({
         "vote_meta": {},

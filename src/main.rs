@@ -11,6 +11,8 @@ use common_x::restful::axum::{Router, routing::post};
 use dao::api::ApiDoc;
 use dao::lexicon::administrator::Administrator;
 use dao::lexicon::profile::Profile;
+use dao::lexicon::task::Task;
+use dao::lexicon::timeline::Timeline;
 use dao::lexicon::vote::Vote;
 use dao::lexicon::vote_meta::VoteMeta;
 use dao::lexicon::vote_whitelist::VoteWhitelist;
@@ -68,6 +70,8 @@ async fn main() -> Result<()> {
     Administrator::init(&db).await?;
     VoteMeta::init(&db).await?;
     Vote::init(&db).await?;
+    Timeline::init(&db).await?;
+    Task::init(&db).await?;
 
     let ckb_client = CkbRpcAsyncClient::new(&args.ckb_url);
 
@@ -136,6 +140,7 @@ async fn main() -> Result<()> {
         )
         .route("/api/vote/status", post(api::vote::status))
         .route("/api/vote/detail", get(api::vote::detail))
+        .route("/api/timeline", get(api::timeline::get))
         .layer((TimeoutLayer::with_status_code(
             reqwest::StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(10),

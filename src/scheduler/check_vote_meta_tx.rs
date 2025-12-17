@@ -9,6 +9,7 @@ use crate::{
     ckb::get_tx_status,
     lexicon::{
         proposal::{Proposal, ProposalState},
+        timeline::{Timeline, TimelineRow, TimelineType},
         vote_meta::{VoteMeta, VoteMetaState},
     },
 };
@@ -49,6 +50,7 @@ pub async fn check_vote_meta_tx(
             (VoteMeta::Table, VoteMeta::Id),
             (VoteMeta::Table, VoteMeta::TxHash),
             (VoteMeta::Table, VoteMeta::ProposalUri),
+            (VoteMeta::Table, VoteMeta::Creater),
             (VoteMeta::Table, VoteMeta::Created),
         ])
         .from(VoteMeta::Table)
@@ -56,7 +58,7 @@ pub async fn check_vote_meta_tx(
         .build_sqlx(PostgresQueryBuilder);
 
     #[allow(clippy::type_complexity)]
-    let rows: Option<Vec<(i32, Option<String>, String, DateTime<Local>)>> =
+    let rows: Option<Vec<(i32, Option<String>, String, String, DateTime<Local>)>> =
         sqlx::query_as_with(&sql, values.clone())
             .fetch_all(&db)
             .await
@@ -66,7 +68,7 @@ pub async fn check_vote_meta_tx(
             })
             .ok();
     if let Some(rows) = rows {
-        for (id, tx_hash, proposal_uri, created) in rows {
+        for (id, tx_hash, proposal_uri, creater, created) in rows {
             if let Some(tx_hash) = tx_hash {
                 let tx_status = get_tx_status(&ckb_client, &tx_hash).await;
                 if let Ok(tx_status) = tx_status {
@@ -105,6 +107,21 @@ pub async fn check_vote_meta_tx(
 
                         if lines > 0 {
                             debug!("Proposal({proposal_uri}) marked as InitiationVote");
+
+                            Timeline::insert(
+                                &db,
+                                &TimelineRow {
+                                    id: 0,
+                                    timeline_type: TimelineType::InitiationVote as i32,
+                                    message: "InitiationVote".to_string(),
+                                    target: proposal_uri.clone(),
+                                    operator: creater,
+                                    timestamp: chrono::Local::now(),
+                                },
+                            )
+                            .await
+                            .map_err(|e| error!("insert timeline failed: {e}"))
+                            .ok();
                         }
                     }
                 }

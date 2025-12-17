@@ -15,7 +15,12 @@ use crate::{
     AppView,
     atproto::{NSID_LIKE, NSID_PROPOSAL, NSID_REPLY, direct_writes},
     error::AppError,
-    lexicon::{like::Like, proposal::Proposal, reply::Reply},
+    lexicon::{
+        like::Like,
+        proposal::Proposal,
+        reply::Reply,
+        timeline::{Timeline, TimelineRow, TimelineType},
+    },
 };
 
 #[derive(Debug, Default, Serialize, Deserialize, ToSchema)]
@@ -84,6 +89,20 @@ pub async fn create(
     match record_type {
         NSID_PROPOSAL => {
             Proposal::insert(&state.db, &new_record.repo, new_record.value, uri, cid).await?;
+            Timeline::insert(
+                &state.db,
+                &TimelineRow {
+                    id: 0,
+                    timeline_type: TimelineType::ProposalCreated as i32,
+                    message: "created".to_string(),
+                    target: uri.to_string(),
+                    operator: new_record.repo.clone(),
+                    timestamp: chrono::Local::now(),
+                },
+            )
+            .await
+            .map_err(|e| error!("insert timeline failed: {e}"))
+            .ok();
         }
         NSID_REPLY => {
             Reply::insert(&state.db, &new_record.repo, &new_record.value, uri, cid).await?;
@@ -144,6 +163,20 @@ pub async fn update(
     match record_type {
         NSID_PROPOSAL => {
             Proposal::update(&state.db, new_record.value, uri, cid).await?;
+            Timeline::insert(
+                &state.db,
+                &TimelineRow {
+                    id: 0,
+                    timeline_type: TimelineType::ProposalEdited as i32,
+                    message: "edited".to_string(),
+                    target: uri.to_string(),
+                    operator: new_record.repo.clone(),
+                    timestamp: chrono::Local::now(),
+                },
+            )
+            .await
+            .map_err(|e| error!("insert timeline failed: {e}"))
+            .ok();
         }
         NSID_REPLY => {
             Reply::insert(&state.db, &new_record.repo, &new_record.value, uri, cid).await?;

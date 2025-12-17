@@ -83,12 +83,6 @@ impl VoteMeta {
             )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
-
-        let sql = sea_query::Table::alter()
-            .table(Self::Table)
-            .add_column_if_not_exists(ColumnDef::new(Self::Results).json_binary())
-            .build(PostgresQueryBuilder);
-        db.execute(query(&sql)).await?;
         Ok(())
     }
 
