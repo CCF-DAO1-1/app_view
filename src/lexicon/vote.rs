@@ -4,6 +4,7 @@ use sea_query::{ColumnDef, Expr, ExprTrait, Iden, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::Serialize;
 use sqlx::{Executor, Pool, Postgres, Row, query, query_with};
+use utoipa::ToSchema;
 
 #[derive(Iden, Debug, Clone, Copy)]
 pub enum Vote {
@@ -17,13 +18,18 @@ pub enum Vote {
     Created,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ToSchema)]
 pub enum VoteState {
+    /// 0 等待发送交易
     #[default]
     Waiting = 0,
+    /// 1 已提交交易
     Committed = 1,
+    /// 2 交易超时
     Timeout = 2,
+    /// 3 交易被拒绝
     Rejected = 3,
+    /// 4 投票已结束
     Finished = 4,
 }
 

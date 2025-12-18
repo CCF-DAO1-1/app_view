@@ -5,14 +5,19 @@ use sea_query_sqlx::SqlxBinder;
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::{Executor, Pool, Postgres, Row, query};
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, ToSchema)]
 pub enum TimelineType {
     #[default]
     Default = 0,
+    /// 1 创建提案
     ProposalCreated,
+    /// 2 编辑提案
     ProposalEdited,
+    /// 3 发起立项投票
     InitiationVote,
+    /// 4 维护项目金库地址
     UpdateReceiverAddr,
 }
 

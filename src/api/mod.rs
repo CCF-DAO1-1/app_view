@@ -22,7 +22,10 @@ use validator::Validate;
 use crate::{
     AppView,
     atproto::{NSID_PROFILE, get_record},
-    lexicon::profile::{Profile, ProfileRow},
+    lexicon::{
+        self,
+        profile::{Profile, ProfileRow},
+    },
 };
 
 #[derive(OpenApi, Debug, Clone, Copy)]
@@ -63,6 +66,14 @@ use crate::{
         SignedBody<vote::UpdateTxParams>,
         SignedBody<vote::UpdateVoteTxParams>,
         vote::PrepareBody,
+
+        // lexicon
+        lexicon::proposal::ProposalState,
+        lexicon::task::TaskType,
+        lexicon::task::TaskState,
+        lexicon::timeline::TimelineType,
+        lexicon::vote_meta::VoteMetaState,
+        lexicon::vote::VoteState,
     ))
 )]
 pub struct ApiDoc;

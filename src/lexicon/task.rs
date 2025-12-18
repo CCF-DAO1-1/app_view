@@ -5,51 +5,55 @@ use sea_query_sqlx::SqlxBinder;
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::{Executor, Pool, Postgres, Row, query};
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, ToSchema)]
 pub enum TaskType {
     #[default]
     Default = 0,
 
-    // 组织AMA
+    /// 1 组织AMA
     CreateAMA,
 
-    // 提交AMA报告
+    /// 2 提交AMA报告
     SubmitAMAReport,
 
-    // 发起立项投票
+    /// 3 发起立项投票
     InitiationVote,
 
-    // 维护项目金库地址
+    /// 4 维护项目金库地址
     UpdateReceiverAddr,
 
-    // 发送启动金
+    /// 5 发送启动金
     SendInitialFund,
 
-    // 提交里程碑报告
+    /// 6 提交里程碑报告
     SubmitReport,
 
-    // 提交验收报告
+    /// 7 提交验收报告
     SubmitAcceptanceReport,
 
-    // 组织复核会议
+    /// 8 组织复核会议
     CreateReexamineMeeting,
 
-    // 发起复核投票
+    /// 9 发起复核投票
     ReexamineVote,
 
-    // 发起最终整改投票
+    /// 10 发起最终整改投票
     RectificationVote,
 
-    // 提交最终整改报告
+    /// 11 提交最终整改报告
     SubmitRectificationReport,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, ToSchema)]
 pub enum TaskState {
+    /// 0 未读
     #[default]
     Unread = 0,
+    /// 1 已读
     Read,
+    /// 2 已完成
     Completed,
 }
 

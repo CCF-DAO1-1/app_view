@@ -5,43 +5,46 @@ use sea_query_sqlx::SqlxBinder;
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::{Executor, Pool, Postgres, query, query_as_with, query_with};
+use utoipa::ToSchema;
 
 use crate::lexicon::vote_meta::VoteMetaRow;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, ToSchema)]
 pub enum ProposalState {
     End = 0,
+
+    /// 1 草稿
     #[default]
     Draft,
 
-    // 立项投票
+    /// 2 立项投票
     InitiationVote,
 
-    // 等待启动金
+    /// 3 等待启动金
     WaitingForStartFund,
 
-    // 项目执行中：里程碑过程
+    /// 4 项目执行中：里程碑过程
     InProgress,
 
-    // 里程碑验收投票
+    /// 5 里程碑验收投票
     AcceptanceVote,
 
-    // 延期投票
+    /// 6 延期投票
     DelayVote,
 
-    // 进度复核投票
+    /// 7 进度复核投票
     ReviewVote,
 
-    // 等待验收报告
+    /// 8 等待验收报告
     WaitingForAcceptanceReport,
 
-    // 项目完成
+    /// 9 项目完成
     Completed,
 
-    // 复核投票
+    /// 10 复核投票
     ReexamineVote,
 
-    // 整改投票
+    /// 11 整改投票
     RectificationVote,
 }
 
