@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local};
 use color_eyre::Result;
-use sea_query::{ColumnDef, ColumnType, Expr, Iden, PostgresQueryBuilder};
+use sea_query::{ColumnDef, ColumnType, Expr, ExprTrait, Iden, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::Serialize;
 use serde_json::Value;
@@ -58,10 +58,10 @@ pub enum Task {
     Table,
     Id,
     TaskType,
-    Importance,
     Message,
     Target,
     Operators,
+    Processor,
     Deadline,
     State,
     Updated,
@@ -89,6 +89,7 @@ impl Task {
             .col(ColumnDef::new(Self::Message).string().not_null())
             .col(ColumnDef::new(Self::Target).string().not_null())
             .col(ColumnDef::new(Self::Operators).array(ColumnType::String(Default::default())))
+            .col(ColumnDef::new(Self::Processor).string())
             .col(
                 ColumnDef::new(Self::Deadline)
                     .timestamp_with_time_zone()
@@ -123,10 +124,10 @@ impl Task {
             .into_table(Self::Table)
             .columns([
                 Self::TaskType,
-                Self::Importance,
                 Self::Message,
                 Self::Target,
                 Self::Operators,
+                Self::Processor,
                 Self::Deadline,
                 Self::State,
                 Self::Updated,
@@ -134,15 +135,39 @@ impl Task {
             ])
             .values([
                 row.task_type.into(),
-                row.importance.into(),
                 row.message.clone().into(),
                 row.target.clone().into(),
                 row.operators.clone().into(),
+                row.processor.clone().into(),
                 row.deadline.into(),
                 row.state.into(),
                 Expr::current_timestamp(),
                 Expr::current_timestamp(),
             ])?
+            .returning_col(Self::Id)
+            .build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(&sql, values)
+            .fetch_one(db)
+            .await
+            .and_then(|r| r.try_get(0))
+            .map_err(|e| color_eyre::eyre::eyre!(e))
+    }
+
+    pub async fn complete(
+        db: &Pool<Postgres>,
+        target: &str,
+        t: TaskType,
+        processor: &str,
+    ) -> Result<i32> {
+        let (sql, values) = sea_query::Query::update()
+            .table(Self::Table)
+            .values([
+                (Self::State, (TaskState::Completed as i32).into()),
+                (Self::Updated, Expr::current_timestamp()),
+                (Self::Processor, processor.into()),
+            ])
+            .and_where(Expr::col(Self::Target).eq(target))
+            .and_where(Expr::col(Self::TaskType).eq(t as i32))
             .returning_col(Self::Id)
             .build_sqlx(PostgresQueryBuilder);
         sqlx::query_with(&sql, values)
@@ -158,10 +183,10 @@ impl Task {
 pub struct TaskRow {
     pub id: i32,
     pub task_type: i32,
-    pub importance: i32,
     pub message: String,
     pub target: String,
     pub operators: Vec<String>,
+    pub processor: Option<String>,
     pub deadline: DateTime<Local>,
     pub state: i32,
     pub updated: DateTime<Local>,
@@ -173,10 +198,10 @@ pub struct TaskRow {
 pub struct TaskView {
     pub id: i32,
     pub task_type: i32,
-    pub importance: i32,
     pub message: String,
     pub target: Value,
     pub operators: Vec<String>,
+    pub processor: Value,
     pub deadline: DateTime<Local>,
     pub state: i32,
     pub updated: DateTime<Local>,

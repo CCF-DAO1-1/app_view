@@ -341,6 +341,10 @@ pub async fn initiation_vote(
         vec![]
     };
 
+    Task::complete(&state.db, &proposal_row.uri, TaskType::InitiationVote, &did)
+        .await
+        .ok();
+
     Ok(ok(json!({
         "vote_meta": vote_meta_row,
         "outputsData": outputs_data
@@ -442,10 +446,10 @@ pub async fn update_receiver_addr(
         &TaskRow {
             id: 0,
             task_type: TaskType::SendInitialFund as i32,
-            importance: 1,
             message: "SendInitialFund".to_string(),
             target: body.params.proposal_uri.clone(),
             operators: admins,
+            processor: None,
             deadline: chrono::Local::now() + chrono::Duration::days(7),
             state: TaskState::Unread as i32,
             updated: chrono::Local::now(),
@@ -454,6 +458,15 @@ pub async fn update_receiver_addr(
     )
     .await
     .map_err(|e| error!("insert task failed: {e}"))
+    .ok();
+
+    Task::complete(
+        &state.db,
+        &body.params.proposal_uri,
+        TaskType::UpdateReceiverAddr,
+        &body.did,
+    )
+    .await
     .ok();
 
     Timeline::insert(

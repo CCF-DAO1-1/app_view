@@ -101,10 +101,10 @@ pub async fn create(
                 &TaskRow {
                     id: 0,
                     task_type: TaskType::CreateAMA as i32,
-                    importance: 1,
                     message: "CreateAMA".to_string(),
                     target: uri.to_string(),
                     operators: admins,
+                    processor: None,
                     deadline: chrono::Local::now() + chrono::Duration::days(21),
                     state: TaskState::Unread as i32,
                     updated: chrono::Local::now(),
@@ -119,10 +119,10 @@ pub async fn create(
                 &TaskRow {
                     id: 0,
                     task_type: TaskType::InitiationVote as i32,
-                    importance: 1,
                     message: "InitiationVote".to_string(),
                     target: uri.to_string(),
                     operators: vec![new_record.repo.clone()],
+                    processor: None,
                     deadline: chrono::Local::now() + chrono::Duration::days(21),
                     state: TaskState::Unread as i32,
                     updated: chrono::Local::now(),

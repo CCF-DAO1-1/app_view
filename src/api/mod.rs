@@ -3,9 +3,9 @@ pub mod proposal;
 pub mod record;
 pub mod reply;
 pub mod repo;
+pub mod task;
 pub mod timeline;
 pub mod vote;
-pub mod task;
 
 use color_eyre::eyre::{OptionExt, eyre};
 use k256::ecdsa::{Signature, VerifyingKey, signature::Verifier};
@@ -50,6 +50,7 @@ use crate::{
         vote::status,
         vote::detail,
         timeline::get,
+        task::get,
     ),
     components(schemas(
         record::NewRecord,

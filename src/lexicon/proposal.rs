@@ -40,7 +40,7 @@ pub enum ProposalState {
 
     // 复核投票
     ReexamineVote,
-    
+
     // 整改投票
     RectificationVote,
 }
