@@ -19,6 +19,7 @@ use validator::Validate;
 use crate::{
     AppView,
     api::{SignedBody, SignedParam, ToTimestamp, build_author, vote::build_vote_meta},
+    ckb::get_vote_time_range,
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
@@ -306,7 +307,7 @@ pub async fn initiation_vote(
                 debug!("fetch vote_whitelist failed: {e}");
                 AppError::ValidateFailed("vote whitelist not found".to_string())
             })?;
-        let now = chrono::Local::now();
+        let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             proposal_state: ProposalState::InitiationVote as i32,
@@ -319,11 +320,11 @@ pub async fn initiation_vote(
                 "Agree".to_string(),
                 "Against".to_string(),
             ],
-            start_time: now,
-            end_time: now.checked_add_days(chrono::Days::new(7)).unwrap(),
+            start_time: time_range.0 as i64,
+            end_time: time_range.1 as i64,
             creater: did.clone(),
             results: None,
-            created: now,
+            created: chrono::Local::now(),
         };
 
         vote_meta_row.id = VoteMeta::insert(&state.db, &vote_meta_row).await?;

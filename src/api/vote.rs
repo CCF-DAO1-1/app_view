@@ -20,7 +20,7 @@ use validator::Validate;
 use crate::{
     AppView,
     api::{SignedBody, SignedParam},
-    ckb::{get_ckb_addr_by_did, get_vote_result},
+    ckb::{get_ckb_addr_by_did, get_vote_result, get_vote_time_range},
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
@@ -267,6 +267,8 @@ pub async fn create_vote_meta(
     {
         vote_meta_row
     } else {
+        // TODO: 7 days
+        let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             proposal_state: proposal_sample.state,
@@ -275,17 +277,8 @@ pub async fn create_vote_meta(
             proposal_uri: body.params.proposal_uri.clone(),
             whitelist_id: chrono::Local::now().format("%Y-%m-%d").to_string(),
             candidates: body.params.candidates.clone(),
-            start_time: chrono::DateTime::from_timestamp(body.params.start_time as i64, 0)
-                .unwrap_or(chrono::Local::now().to_utc())
-                .into(),
-            end_time: chrono::DateTime::from_timestamp(body.params.end_time as i64, 0)
-                .unwrap_or(
-                    chrono::Local::now()
-                        .checked_add_months(chrono::Months::new(1))
-                        .unwrap()
-                        .to_utc(),
-                )
-                .into(),
+            start_time: time_range.0 as i64,
+            end_time: time_range.1 as i64,
             creater: body.did.clone(),
             results: None,
             created: chrono::Local::now(),
@@ -670,22 +663,14 @@ pub async fn build_vote_meta(
         .start_time(
             molecules::Uint64::new_builder()
                 .set::<[molecule::prelude::Byte; 8]>(
-                    vote_meta_row
-                        .start_time
-                        .timestamp()
-                        .to_be_bytes()
-                        .map(|b| b.into()),
+                    vote_meta_row.start_time.to_be_bytes().map(|b| b.into()),
                 )
                 .build(),
         )
         .end_time(
             molecules::Uint64::new_builder()
                 .set::<[molecule::prelude::Byte; 8]>(
-                    vote_meta_row
-                        .end_time
-                        .timestamp()
-                        .to_be_bytes()
-                        .map(|b| b.into()),
+                    vote_meta_row.end_time.to_be_bytes().map(|b| b.into()),
                 )
                 .build(),
         )

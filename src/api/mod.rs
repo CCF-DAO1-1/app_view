@@ -145,7 +145,6 @@ pub trait SignedParam: Default + ToSchema + Serialize + Validate {
 pub struct SignedBody<SignedParam> {
     pub params: SignedParam,
     pub did: String,
-    #[validate(length(equal = 57))]
     pub signing_key_did: String,
     pub signed_bytes: String,
 }

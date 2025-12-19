@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use ckb_sdk::{Address, AddressPayload, CkbRpcAsyncClient, NetworkType};
-use ckb_types::{core::ScriptHashType, prelude::Pack};
+use ckb_types::{
+    core::{EpochNumberWithFraction, ScriptHashType},
+    prelude::Pack,
+};
 use color_eyre::{
     Result,
     eyre::{OptionExt, eyre},
@@ -275,4 +278,47 @@ fn test() {
     let bs = hex::decode(s).unwrap();
     let did = base32::encode(base32::Alphabet::Rfc4648Lower { padding: false }, &bs);
     println!("did: {}", did);
+}
+
+#[tokio::test]
+async fn get_last() {
+    let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");
+
+    let r = ckb_client.get_blockchain_info().await.unwrap();
+    println!("{:?}", r);
+
+    let r = ckb_client.get_current_epoch().await.unwrap();
+    println!("{:?}", r);
+
+    let bn = ckb_client.get_tip_block_number().await.unwrap();
+    println!("{:?}", bn);
+
+    let r = EpochNumberWithFraction::new(
+        r.number.into(),
+        Into::<u64>::into(bn) - Into::<u64>::into(r.start_number),
+        r.length.into(),
+    );
+    r.full_value();
+    println!("{:?}", r);
+}
+
+pub async fn get_vote_time_range(
+    ckb_client: &CkbRpcAsyncClient,
+    duration_days: u64,
+) -> Result<(u64, u64)> {
+    let current_epoch = ckb_client.get_current_epoch().await?;
+    let bn = ckb_client.get_tip_block_number().await?;
+
+    let begin = EpochNumberWithFraction::new(
+        current_epoch.number.into(),
+        Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number),
+        current_epoch.length.into(),
+    );
+
+    let end = EpochNumberWithFraction::new(
+        Into::<u64>::into(current_epoch.number) + (6 * duration_days),
+        Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number),
+        current_epoch.length.into(),
+    );
+    Ok((begin.full_value(), end.full_value()))
 }

@@ -19,6 +19,8 @@ pub enum TimelineType {
     InitiationVote,
     /// 4 维护项目金库地址
     UpdateReceiverAddr,
+    /// 5 计票完成
+    VoteFinished,
 }
 
 #[derive(Iden, Debug, Clone, Copy)]

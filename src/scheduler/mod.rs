@@ -1,6 +1,7 @@
 pub mod build_vote_whitelist;
 mod check_vote_meta_tx;
 mod check_vote_tx;
+mod check_vote_finished;
 
 use color_eyre::{Result, eyre::eyre};
 use tokio_cron_scheduler::JobScheduler;
@@ -17,6 +18,9 @@ pub async fn init_task_scheduler(app: &AppView) -> Result<()> {
     sched.add(job).await?;
 
     let job = check_vote_tx::job(&sched, app, "1/15 * * * * *").await?;
+    sched.add(job).await?;
+
+    let job = check_vote_finished::job(&sched, app, "* 1/2 * * * *").await?;
     sched.add(job).await?;
 
     sched.set_shutdown_handler(Box::new(|| {

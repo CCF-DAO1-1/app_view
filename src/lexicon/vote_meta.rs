@@ -141,10 +141,13 @@ impl VoteMeta {
         Ok(())
     }
 
-    pub async fn update_results(db: &Pool<Postgres>, id: i32, results: &str) -> Result<()> {
+    pub async fn update_results(db: &Pool<Postgres>, id: i32, results: Value) -> Result<()> {
         let (sql, values) = sea_query::Query::update()
             .table(Self::Table)
-            .value(Self::Results, results)
+            .values([
+                (Self::Results, results.into()),
+                (Self::State, (VoteMetaState::Finished as i32).into()),
+            ])
             .and_where(Expr::col(Self::Id).eq(id))
             .build_sqlx(PostgresQueryBuilder);
 
@@ -182,8 +185,8 @@ pub struct VoteMetaRow {
     pub proposal_uri: String,
     pub whitelist_id: String,
     pub candidates: Vec<String>,
-    pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub start_time: i64,
+    pub end_time: i64,
     pub creater: String,
     pub results: Option<Value>,
     pub created: DateTime<Local>,
