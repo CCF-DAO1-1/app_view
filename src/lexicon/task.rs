@@ -28,21 +28,27 @@ pub enum TaskType {
     SendInitialFund,
 
     /// 6 提交里程碑报告
-    SubmitReport,
+    SubmitMilestoneReport,
 
-    /// 7 提交验收报告
+    /// 7 提交延期报告
+    SubmitDelayReport,
+
+    /// 8 发送里程碑资金
+    SendMilestoneFund,
+
+    /// 9 提交验收报告
     SubmitAcceptanceReport,
 
-    /// 8 组织复核会议
+    /// 10 组织复核会议
     CreateReexamineMeeting,
 
-    /// 9 发起复核投票
+    /// 11 发起复核投票
     ReexamineVote,
 
-    /// 10 发起最终整改投票
+    /// 12 发起最终整改投票
     RectificationVote,
 
-    /// 11 提交最终整改报告
+    /// 13 提交最终整改报告
     SubmitRectificationReport,
 }
 

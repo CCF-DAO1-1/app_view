@@ -27,24 +27,27 @@ pub enum ProposalState {
     InProgress,
 
     /// 5 里程碑验收投票
-    AcceptanceVote,
+    MilestoneVote,
 
     /// 6 延期投票
     DelayVote,
 
-    /// 7 进度复核投票
+    /// 7 等待启动金
+    WaitingForMilestoneFund,
+
+    /// 8 进度复核投票
     ReviewVote,
 
-    /// 8 等待验收报告
+    /// 9 等待验收报告
     WaitingForAcceptanceReport,
 
-    /// 9 项目完成
+    /// 10 项目完成
     Completed,
 
-    /// 10 复核投票
+    /// 11 复核投票
     ReexamineVote,
 
-    /// 11 整改投票
+    /// 12 整改投票
     RectificationVote,
 }
 
@@ -56,13 +59,14 @@ impl ProposalState {
             2 => ProposalState::InitiationVote,
             3 => ProposalState::WaitingForStartFund,
             4 => ProposalState::InProgress,
-            5 => ProposalState::AcceptanceVote,
+            5 => ProposalState::MilestoneVote,
             6 => ProposalState::DelayVote,
-            7 => ProposalState::ReviewVote,
-            8 => ProposalState::WaitingForAcceptanceReport,
-            9 => ProposalState::Completed,
-            10 => ProposalState::ReexamineVote,
-            11 => ProposalState::RectificationVote,
+            7 => ProposalState::WaitingForMilestoneFund,
+            8 => ProposalState::ReviewVote,
+            9 => ProposalState::WaitingForAcceptanceReport,
+            10 => ProposalState::Completed,
+            11 => ProposalState::ReexamineVote,
+            12 => ProposalState::RectificationVote,
             _ => ProposalState::Draft,
         }
     }
@@ -76,6 +80,7 @@ pub enum Proposal {
     Repo,
     Record,
     State,
+    Progress,
     Updated,
     ReceiverAddr,
 }
@@ -96,12 +101,29 @@ impl Proposal {
                     .default(ProposalState::Draft as i32),
             )
             .col(
+                ColumnDef::new(Self::Progress)
+                    .integer()
+                    .not_null()
+                    .default(0),
+            )
+            .col(
                 ColumnDef::new(Self::Updated)
                     .timestamp_with_time_zone()
                     .not_null()
                     .default(Expr::current_timestamp()),
             )
             .col(ColumnDef::new(Self::ReceiverAddr).string())
+            .build(PostgresQueryBuilder);
+        db.execute(query(&sql)).await?;
+
+        let sql = sea_query::Table::alter()
+            .table(Self::Table)
+            .add_column_if_not_exists(
+                ColumnDef::new(Self::Progress)
+                    .integer()
+                    .not_null()
+                    .default(0),
+            )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
         Ok(())
@@ -176,6 +198,7 @@ impl Proposal {
             (Proposal::Table, Proposal::Cid),
             (Proposal::Table, Proposal::Repo),
             (Proposal::Table, Proposal::Record),
+            (Proposal::Table, Proposal::Progress),
             (Proposal::Table, Proposal::State),
             (Proposal::Table, Proposal::Updated),
             (Proposal::Table, Proposal::ReceiverAddr),
@@ -190,11 +213,46 @@ impl Proposal {
         .take()
     }
 
+    pub fn build_sample() -> sea_query::SelectStatement {
+        sea_query::Query::select()
+            .columns([
+                (Proposal::Table, Proposal::Uri),
+                (Proposal::Table, Proposal::Cid),
+                (Proposal::Table, Proposal::Repo),
+                (Proposal::Table, Proposal::Record),
+                (Proposal::Table, Proposal::Progress),
+                (Proposal::Table, Proposal::State),
+                (Proposal::Table, Proposal::Updated),
+            ])
+            .from(Proposal::Table)
+            .take()
+    }
+
     pub async fn update_state(db: &Pool<Postgres>, uri: &str, state: i32) -> Result<u64> {
         let (sql, values) = sea_query::Query::update()
             .table(Self::Table)
             .values([
                 (Self::State, state.into()),
+                (Self::Updated, Expr::current_timestamp()),
+            ])
+            .and_where(Expr::col(Self::Uri).eq(uri))
+            .build_sqlx(PostgresQueryBuilder);
+
+        let lines = db.execute(query_with(&sql, values)).await?.rows_affected();
+        Ok(lines)
+    }
+
+    pub async fn update_progress(
+        db: &Pool<Postgres>,
+        uri: &str,
+        state: i32,
+        progress: i32,
+    ) -> Result<u64> {
+        let (sql, values) = sea_query::Query::update()
+            .table(Self::Table)
+            .values([
+                (Self::State, state.into()),
+                (Self::Progress, progress.into()),
                 (Self::Updated, Expr::current_timestamp()),
             ])
             .and_where(Expr::col(Self::Uri).eq(uri))
@@ -233,6 +291,7 @@ pub struct ProposalSample {
     pub cid: String,
     pub repo: String,
     pub record: Value,
+    pub progress: i32,
     pub state: i32,
     pub updated: DateTime<Local>,
 }
@@ -243,6 +302,7 @@ pub struct ProposalRow {
     pub cid: String,
     pub repo: String,
     pub record: Value,
+    pub progress: i32,
     pub state: i32,
     pub updated: DateTime<Local>,
     pub receiver_addr: Option<String>,
@@ -256,6 +316,7 @@ pub struct ProposalView {
     pub cid: String,
     pub author: Value,
     pub record: Value,
+    pub progress: i32,
     pub state: i32,
     pub updated: DateTime<Local>,
     pub receiver_addr: Option<String>,
@@ -273,10 +334,26 @@ impl ProposalView {
             record: row.record,
             updated: row.updated,
             receiver_addr: row.receiver_addr,
+            progress: row.progress,
             state: row.state,
             like_count: row.like_count.to_string(),
             liked: row.liked,
             vote_meta,
         }
     }
+}
+
+pub fn has_next_milestone(proposal_sample: &ProposalSample) -> Option<usize> {
+    if let Some(milestones) = proposal_sample
+        .record
+        .pointer("/data/milestones")
+        .and_then(|m| m.as_array())
+    {
+        let next_milestone = milestones.get(proposal_sample.progress as usize + 1);
+        if let Some(milestone) = next_milestone {
+            debug!("next_milestone: {:?}", milestone);
+            return Some(proposal_sample.progress as usize + 1);
+        }
+    }
+    None
 }

@@ -371,7 +371,6 @@ impl SignedParam for ReceiverAddrParams {
 #[utoipa::path(
     post,
     path = "/api/proposal/update_receiver_addr",
-    params(StateQuery),
     description = "更新项目金库地址"
 )]
 pub async fn update_receiver_addr(
@@ -393,16 +392,7 @@ pub async fn update_receiver_addr(
         .await
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let (sql, value) = sea_query::Query::select()
-        .columns([
-            (Proposal::Table, Proposal::Uri),
-            (Proposal::Table, Proposal::Cid),
-            (Proposal::Table, Proposal::Repo),
-            (Proposal::Table, Proposal::Record),
-            (Proposal::Table, Proposal::State),
-            (Proposal::Table, Proposal::Updated),
-        ])
-        .from(Proposal::Table)
+    let (sql, value) = Proposal::build_sample()
         .and_where(Expr::col(Proposal::Uri).eq(body.params.proposal_uri.clone()))
         .build_sqlx(PostgresQueryBuilder);
     let proposal_sample: ProposalSample = query_as_with(&sql, value)
@@ -487,9 +477,7 @@ pub async fn update_receiver_addr(
     .map_err(|e| error!("insert timeline failed: {e}"))
     .ok();
 
-    Ok(ok(json!({
-        "vote_meta": {},
-    })))
+    Ok(ok_simple())
 }
 
 pub fn vote_result(vote_meta: &VoteMetaRow, proposal: &ProposalSample) -> VoteResult {
@@ -547,7 +535,7 @@ pub fn calculate_vote_result(
                 }
             }
         }
-        ProposalState::AcceptanceVote | ProposalState::DelayVote | ProposalState::ReviewVote => {
+        ProposalState::MilestoneVote | ProposalState::DelayVote | ProposalState::ReviewVote => {
             if proposal_type == "BudgetProposal" {
                 if results.valid_weight_sum >= 6200_0000_0000_0000 {
                     let against =

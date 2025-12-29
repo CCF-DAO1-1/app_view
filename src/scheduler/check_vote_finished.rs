@@ -175,16 +175,7 @@ pub async fn check_vote_meta_finished(
         // update vote_meta state
         VoteMeta::update_results(&db, id, json!(vote_result)).await?;
 
-        let (sql, value) = sea_query::Query::select()
-            .columns([
-                (Proposal::Table, Proposal::Uri),
-                (Proposal::Table, Proposal::Cid),
-                (Proposal::Table, Proposal::Repo),
-                (Proposal::Table, Proposal::Record),
-                (Proposal::Table, Proposal::State),
-                (Proposal::Table, Proposal::Updated),
-            ])
-            .from(Proposal::Table)
+        let (sql, value) = Proposal::build_sample()
             .and_where(Expr::col(Proposal::Uri).eq(proposal_uri.clone()))
             .build_sqlx(PostgresQueryBuilder);
         let proposal_sample: ProposalSample = query_as_with(&sql, value).fetch_one(&db).await?;
@@ -205,6 +196,13 @@ pub async fn check_vote_meta_finished(
             VoteResult::Voting => {}
             VoteResult::Agree => match ProposalState::from(proposal_state) {
                 ProposalState::InitiationVote => {
+                    Proposal::update_state(
+                        &db,
+                        &proposal_uri,
+                        ProposalState::WaitingForStartFund as i32,
+                    )
+                    .await?;
+
                     let admins = Administrator::fetch_all(&db)
                         .await
                         .iter()
@@ -233,7 +231,7 @@ pub async fn check_vote_meta_finished(
                         .await
                         .ok();
                 }
-                ProposalState::AcceptanceVote => todo!(),
+                ProposalState::MilestoneVote => todo!(),
                 ProposalState::DelayVote => todo!(),
                 ProposalState::ReviewVote => todo!(),
                 ProposalState::ReexamineVote => todo!(),

@@ -21,6 +21,16 @@ pub enum TimelineType {
     UpdateReceiverAddr,
     /// 5 计票完成
     VoteFinished,
+    /// 6 发送初始资金
+    SendInitialFund,
+    /// 7 提交里程碑报告
+    SubmitMilestoneReport,
+    /// 8 提交延期报告
+    SubmitDelayReport,
+    /// 9 发送里程碑资金
+    SendMilestoneFund,
+    /// 10 提交验收报告
+    SubmitAcceptanceReport,
 }
 
 #[derive(Iden, Debug, Clone, Copy)]

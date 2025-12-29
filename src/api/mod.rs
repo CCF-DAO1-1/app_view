@@ -54,6 +54,7 @@ use crate::{
         vote::detail,
         timeline::get,
         task::get,
+        task::send_funds,
     ),
     components(schemas(
         record::NewRecord,
@@ -66,6 +67,7 @@ use crate::{
         SignedBody<vote::UpdateTxParams>,
         SignedBody<vote::UpdateVoteTxParams>,
         vote::PrepareBody,
+        SignedBody<task::SendFundsParams>,
 
         // lexicon
         lexicon::proposal::ProposalState,

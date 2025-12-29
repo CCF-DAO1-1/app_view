@@ -1,26 +1,29 @@
 use color_eyre::eyre::eyre;
 use common_x::restful::{
     axum::{
+        Json,
         extract::{Query, State},
         response::IntoResponse,
     },
-    ok,
+    ok, ok_simple,
 };
 use sea_query::{Expr, ExprTrait, Order, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::query_as_with;
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
 use crate::{
     AppView,
-    api::build_author,
+    api::{SignedBody, SignedParam, build_author},
     error::AppError,
     lexicon::{
-        proposal::{Proposal, ProposalRow},
-        task::{Task, TaskRow, TaskState, TaskView},
+        administrator::{Administrator, AdministratorRow},
+        proposal::{Proposal, ProposalRow, ProposalSample, ProposalState, has_next_milestone},
+        task::{Task, TaskRow, TaskState, TaskType, TaskView},
+        timeline::{Timeline, TimelineRow, TimelineType},
     },
 };
 
@@ -139,4 +142,268 @@ pub async fn get(
         "per_page": query.per_page,
         "total":  total.0
     })))
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct SendFundsParams {
+    pub proposal_uri: String,
+    pub amount: String,
+    pub timestamp: i64,
+}
+
+impl SignedParam for SendFundsParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
+}
+
+#[utoipa::path(post, path = "/api/task/send_funds", description = "拨款")]
+pub async fn send_funds(
+    State(state): State<AppView>,
+    Json(body): Json<SignedBody<SendFundsParams>>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Proposal::build_sample()
+        .and_where(Expr::col(Proposal::Uri).eq(body.params.proposal_uri.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let proposal_sample: ProposalSample = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("proposal not found: {e}")))?;
+
+    let admins = Administrator::fetch_all(&state.db)
+        .await
+        .iter()
+        .map(|admin| admin.did.clone())
+        .collect::<Vec<_>>();
+
+    match ProposalState::from(proposal_sample.state) {
+        ProposalState::End => {}
+        ProposalState::Draft => {}
+        ProposalState::InitiationVote => {}
+        ProposalState::WaitingForStartFund => {
+            let milestones_len = proposal_sample
+                .record
+                .pointer("/data/milestones")
+                .and_then(|m| m.as_array())
+                .map(|m| m.len())
+                .unwrap_or(0);
+            if milestones_len > 0 {
+                Proposal::update_state(
+                    &state.db,
+                    &body.params.proposal_uri,
+                    ProposalState::InProgress as i32,
+                )
+                .await?;
+
+                Task::insert(
+                    &state.db,
+                    &TaskRow {
+                        id: 0,
+                        task_type: TaskType::SubmitMilestoneReport as i32,
+                        message: "SubmitMilestoneReport".to_string(),
+                        target: body.params.proposal_uri.clone(),
+                        operators: admins.clone(),
+                        processor: None,
+                        deadline: chrono::Local::now() + chrono::Duration::days(7),
+                        state: TaskState::Unread as i32,
+                        updated: chrono::Local::now(),
+                        created: chrono::Local::now(),
+                    },
+                )
+                .await
+                .map_err(|e| error!("insert task failed: {e}"))
+                .ok();
+                Task::insert(
+                    &state.db,
+                    &TaskRow {
+                        id: 0,
+                        task_type: TaskType::SubmitDelayReport as i32,
+                        message: "SubmitDelayReport".to_string(),
+                        target: body.params.proposal_uri.clone(),
+                        operators: admins,
+                        processor: None,
+                        deadline: chrono::Local::now() + chrono::Duration::days(7),
+                        state: TaskState::Unread as i32,
+                        updated: chrono::Local::now(),
+                        created: chrono::Local::now(),
+                    },
+                )
+                .await
+                .map_err(|e| error!("insert task failed: {e}"))
+                .ok();
+            } else {
+                Proposal::update_state(
+                    &state.db,
+                    &body.params.proposal_uri,
+                    ProposalState::WaitingForAcceptanceReport as i32,
+                )
+                .await?;
+
+                Task::insert(
+                    &state.db,
+                    &TaskRow {
+                        id: 0,
+                        task_type: TaskType::SubmitAcceptanceReport as i32,
+                        message: "SubmitAcceptanceReport".to_string(),
+                        target: body.params.proposal_uri.clone(),
+                        operators: admins,
+                        processor: None,
+                        deadline: chrono::Local::now() + chrono::Duration::days(7),
+                        state: TaskState::Unread as i32,
+                        updated: chrono::Local::now(),
+                        created: chrono::Local::now(),
+                    },
+                )
+                .await
+                .map_err(|e| error!("insert task failed: {e}"))
+                .ok();
+            }
+
+            Timeline::insert(
+                &state.db,
+                &TimelineRow {
+                    id: 0,
+                    timeline_type: TimelineType::SendInitialFund as i32,
+                    message: "SendInitialFund".to_string(),
+                    target: body.params.proposal_uri.clone(),
+                    operator: body.did.clone(),
+                    timestamp: chrono::Local::now(),
+                },
+            )
+            .await
+            .map_err(|e| error!("insert timeline failed: {e}"))
+            .ok();
+            Task::complete(
+                &state.db,
+                &body.params.proposal_uri,
+                TaskType::SendInitialFund,
+                &body.did,
+            )
+            .await
+            .ok();
+        }
+        ProposalState::InProgress => {}
+        ProposalState::MilestoneVote => {}
+        ProposalState::DelayVote => {}
+        ProposalState::WaitingForMilestoneFund => {
+            if let Some(next_milestone) = has_next_milestone(&proposal_sample) {
+                Proposal::update_progress(
+                    &state.db,
+                    &body.params.proposal_uri,
+                    ProposalState::WaitingForAcceptanceReport as i32,
+                    next_milestone as i32,
+                )
+                .await?;
+
+                Task::insert(
+                    &state.db,
+                    &TaskRow {
+                        id: 0,
+                        task_type: TaskType::SubmitMilestoneReport as i32,
+                        message: "SubmitMilestoneReport".to_string(),
+                        target: body.params.proposal_uri.clone(),
+                        operators: admins.clone(),
+                        processor: None,
+                        deadline: chrono::Local::now() + chrono::Duration::days(7),
+                        state: TaskState::Unread as i32,
+                        updated: chrono::Local::now(),
+                        created: chrono::Local::now(),
+                    },
+                )
+                .await
+                .map_err(|e| error!("insert task failed: {e}"))
+                .ok();
+                Task::insert(
+                    &state.db,
+                    &TaskRow {
+                        id: 0,
+                        task_type: TaskType::SubmitDelayReport as i32,
+                        message: "SubmitDelayReport".to_string(),
+                        target: body.params.proposal_uri.clone(),
+                        operators: admins,
+                        processor: None,
+                        deadline: chrono::Local::now() + chrono::Duration::days(7),
+                        state: TaskState::Unread as i32,
+                        updated: chrono::Local::now(),
+                        created: chrono::Local::now(),
+                    },
+                )
+                .await
+                .map_err(|e| error!("insert task failed: {e}"))
+                .ok();
+            } else {
+                Proposal::update_state(
+                    &state.db,
+                    &body.params.proposal_uri,
+                    ProposalState::WaitingForAcceptanceReport as i32,
+                )
+                .await?;
+
+                Task::insert(
+                    &state.db,
+                    &TaskRow {
+                        id: 0,
+                        task_type: TaskType::SubmitAcceptanceReport as i32,
+                        message: "SubmitAcceptanceReport".to_string(),
+                        target: body.params.proposal_uri.clone(),
+                        operators: admins,
+                        processor: None,
+                        deadline: chrono::Local::now() + chrono::Duration::days(7),
+                        state: TaskState::Unread as i32,
+                        updated: chrono::Local::now(),
+                        created: chrono::Local::now(),
+                    },
+                )
+                .await
+                .map_err(|e| error!("insert task failed: {e}"))
+                .ok();
+            }
+
+            Timeline::insert(
+                &state.db,
+                &TimelineRow {
+                    id: 0,
+                    timeline_type: TimelineType::SendMilestoneFund as i32,
+                    message: "SendMilestoneFund".to_string(),
+                    target: body.params.proposal_uri.clone(),
+                    operator: body.did.clone(),
+                    timestamp: chrono::Local::now(),
+                },
+            )
+            .await
+            .map_err(|e| error!("insert timeline failed: {e}"))
+            .ok();
+            Task::complete(
+                &state.db,
+                &body.params.proposal_uri,
+                TaskType::SendMilestoneFund,
+                &body.did,
+            )
+            .await
+            .ok();
+        }
+        ProposalState::ReviewVote => {}
+        ProposalState::WaitingForAcceptanceReport => {}
+        ProposalState::Completed => {}
+        ProposalState::ReexamineVote => {}
+        ProposalState::RectificationVote => {}
+    }
+
+    Ok(ok_simple())
 }
