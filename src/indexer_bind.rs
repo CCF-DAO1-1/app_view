@@ -49,7 +49,6 @@ pub async fn get_weight(
     ckb_addr: &str,
 ) -> Result<u64> {
     let from_list = crate::indexer_bind::query_by_to(indexer_bind_url, ckb_addr).await?;
-    debug!("from_list: {:?}", from_list);
     let mut weight = get_nervos_dao_deposit(ckb_client, ckb_addr).await?;
 
     for from in from_list

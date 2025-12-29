@@ -1,17 +1,22 @@
 use ckb_types::core::EpochNumberWithFraction;
-use color_eyre::Result;
+use ckb_types::prelude::Entity;
+use color_eyre::{Result, eyre::OptionExt};
 use sea_query::{Expr, ExprTrait, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde_json::json;
+use sqlx::query_as_with;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use crate::{
     AppView,
+    api::proposal::calculate_vote_result,
+    indexer_vote::all_votes,
     lexicon::{
-        proposal::ProposalState,
+        administrator::Administrator,
+        proposal::{Proposal, ProposalSample, ProposalState},
         task::{Task, TaskRow, TaskState, TaskType},
         timeline::{Timeline, TimelineRow, TimelineType},
-        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteResult},
+        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteResult, VoteResults},
     },
 };
 
@@ -21,8 +26,10 @@ pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job>
         Box::pin({
             let db = app.db.clone();
             let ckb_client = app.ckb_client.clone();
+            let indexer_bind_url = app.indexer_bind_url.clone();
+            let indexer_vote_url = app.indexer_vote_url.clone();
             async move {
-                check_vote_meta_finished(db, ckb_client)
+                check_vote_meta_finished(db, indexer_bind_url, indexer_vote_url, ckb_client)
                     .await
                     .map_err(|e| error!("job run failed: {e}"))
                     .ok();
@@ -47,6 +54,8 @@ pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job>
 
 pub async fn check_vote_meta_finished(
     db: sqlx::Pool<sqlx::Postgres>,
+    indexer_bind_url: String,
+    indexer_vote_url: String,
     ckb_client: ckb_sdk::CkbRpcAsyncClient,
 ) -> Result<()> {
     let (sql, values) = VoteMeta::build_select()
@@ -63,12 +72,18 @@ pub async fn check_vote_meta_finished(
         .unwrap_or_default();
     let bn: u64 = ckb_client.get_tip_block_number().await?.into();
     let current_epoch = ckb_client.get_current_epoch().await?;
+    debug!(
+        "check_vote_meta_finished at block number: {}, current_epoch: {:?}",
+        bn, current_epoch
+    );
     for VoteMetaRow {
         id,
         proposal_uri,
         proposal_state,
         end_time,
         creater,
+        tx_hash,
+        candidates,
         ..
     } in rows
     {
@@ -76,53 +91,157 @@ pub async fn check_vote_meta_finished(
         let current_epoch_number: u64 = current_epoch.number.into();
         let current_epoch_length: u64 = current_epoch.length.into();
         let current_epoch_index: u64 = bn - Into::<u64>::into(current_epoch.start_number);
-        if end_time.number() < current_epoch_number
+        debug!(
+            "check vote_meta id: {}, proposal_state: {}, end_time: {}",
+            id, proposal_state, end_time
+        );
+        if end_time.number() > current_epoch_number
             || (end_time.number() == current_epoch_number
                 && (end_time.index() as f64 / end_time.length() as f64)
-                    < (current_epoch_index as f64 / current_epoch_length as f64))
+                    > (current_epoch_index as f64 / current_epoch_length as f64))
         {
             continue;
         }
 
         // TODO: get votes by vote_indexer
-        let vote_result = VoteResult::Agree;
-        // update vote_meta state
-        VoteMeta::update_results(&db, id, json!({})).await?;
+        let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
+            tx_hash: ckb_types::H256(
+                hex::decode(tx_hash.unwrap().trim_start_matches("0x"))
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+            ),
+            index: 0.into(),
+        }
+        .into();
+        let pubkey_hash = ckb_hash::blake2b_256(vote_meta_out_point.as_bytes());
+        let args = pubkey_hash[0..20].to_vec();
+        let args = hex::encode(args);
+        debug!("args: {}", args);
 
-        match vote_result {
-            VoteResult::Voting => {}
-            VoteResult::Agree => {}
-            VoteResult::Against => {}
-            VoteResult::Failed => {}
+        let vote_result = all_votes(
+            &indexer_vote_url,
+            &args,
+            end_time.number() as i64,
+            end_time.index() as i64,
+            end_time.length() as i64,
+        )
+        .await?
+        .as_array()
+        .cloned()
+        .ok_or_eyre("vote_result is not array")?;
+        let vote_sum = vote_result.len();
+        let mut weight_sum = 0;
+        let mut valid_vote_sum = 0;
+        let mut valid_weight_sum = 0;
+        let mut valid_votes = vec![vec![]; candidates.len()];
+        let mut candidate_votes = vec![0; candidates.len()];
+        for vote in vote_result {
+            let ckb_addr = vote
+                .get("ckbAddress")
+                .and_then(|v| v.as_str())
+                .ok_or_eyre("ckb_addr not found")?;
+            let vote_index = vote
+                .get("voteIndex")
+                .and_then(|v| v.as_array())
+                .ok_or_eyre("vote_index not found")?
+                .first()
+                .and_then(|i| i.as_i64())
+                .ok_or_eyre("vote_index not found")?;
+            let weight = crate::indexer_bind::get_weight(&ckb_client, &indexer_bind_url, ckb_addr)
+                .await
+                .unwrap_or(0);
+
+            weight_sum += weight;
+            if let Some(candidate_vote) = candidate_votes.get_mut(vote_index as usize) {
+                valid_vote_sum += 1;
+                valid_weight_sum += weight;
+                *candidate_vote += weight;
+            }
+            if let Some(valid_vote) = valid_votes.get_mut(vote_index as usize) {
+                valid_vote.push((ckb_addr.to_string(), weight));
+            }
         }
 
-        match ProposalState::from(proposal_state) {
-            ProposalState::InitiationVote => {
-                Task::insert(
-                    &db,
-                    &TaskRow {
-                        id: 0,
-                        task_type: TaskType::UpdateReceiverAddr as i32,
-                        message: "UpdateReceiverAddr".to_string(),
-                        target: proposal_uri.clone(),
-                        operators: vec![],
-                        processor: None,
-                        deadline: chrono::Local::now() + chrono::Duration::days(21),
-                        state: TaskState::Unread as i32,
-                        updated: chrono::Local::now(),
-                        created: chrono::Local::now(),
-                    },
-                )
-                .await
-                .map_err(|e| error!("insert task failed: {e}"))
-                .ok();
-            }
-            ProposalState::AcceptanceVote => todo!(),
-            ProposalState::DelayVote => todo!(),
-            ProposalState::ReviewVote => todo!(),
-            ProposalState::ReexamineVote => todo!(),
-            ProposalState::RectificationVote => todo!(),
-            _ => {}
+        let vote_result = VoteResults {
+            vote_sum: vote_sum as u64,
+            valid_vote_sum: valid_vote_sum as u64,
+            weight_sum,
+            valid_weight_sum,
+            valid_votes,
+            candidate_votes,
+        };
+        debug!("vote_result: {:?}", vote_result);
+        // update vote_meta state
+        VoteMeta::update_results(&db, id, json!(vote_result)).await?;
+
+        let (sql, value) = sea_query::Query::select()
+            .columns([
+                (Proposal::Table, Proposal::Uri),
+                (Proposal::Table, Proposal::Cid),
+                (Proposal::Table, Proposal::Repo),
+                (Proposal::Table, Proposal::Record),
+                (Proposal::Table, Proposal::State),
+                (Proposal::Table, Proposal::Updated),
+            ])
+            .from(Proposal::Table)
+            .and_where(Expr::col(Proposal::Uri).eq(proposal_uri.clone()))
+            .build_sqlx(PostgresQueryBuilder);
+        let proposal_sample: ProposalSample = query_as_with(&sql, value).fetch_one(&db).await?;
+        debug!("proposal_sample: {:?}", proposal_sample);
+        let proposal_type = proposal_sample
+            .record
+            .pointer("/data/proposalType")
+            .and_then(|t| t.as_str())
+            .ok_or_eyre("")?;
+        let vote_result =
+            calculate_vote_result(proposal_state, &proposal_sample, vote_result, proposal_type);
+
+        debug!(
+            "vote_meta id: {} finished with result: {:?}",
+            id, vote_result
+        );
+        match vote_result {
+            VoteResult::Voting => {}
+            VoteResult::Agree => match ProposalState::from(proposal_state) {
+                ProposalState::InitiationVote => {
+                    let admins = Administrator::fetch_all(&db)
+                        .await
+                        .iter()
+                        .map(|admin| admin.did.clone())
+                        .collect();
+                    Task::insert(
+                        &db,
+                        &TaskRow {
+                            id: 0,
+                            task_type: TaskType::UpdateReceiverAddr as i32,
+                            message: "UpdateReceiverAddr".to_string(),
+                            target: proposal_uri.clone(),
+                            operators: admins,
+                            processor: None,
+                            deadline: chrono::Local::now() + chrono::Duration::days(21),
+                            state: TaskState::Unread as i32,
+                            updated: chrono::Local::now(),
+                            created: chrono::Local::now(),
+                        },
+                    )
+                    .await
+                    .map_err(|e| error!("insert task failed: {e}"))
+                    .ok();
+
+                    Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
+                        .await
+                        .ok();
+                }
+                ProposalState::AcceptanceVote => todo!(),
+                ProposalState::DelayVote => todo!(),
+                ProposalState::ReviewVote => todo!(),
+                ProposalState::ReexamineVote => todo!(),
+                ProposalState::RectificationVote => todo!(),
+                _ => {}
+            },
+            VoteResult::Against => {}
+            VoteResult::Failed => {}
         }
 
         Timeline::insert(

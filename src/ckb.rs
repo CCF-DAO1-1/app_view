@@ -322,3 +322,30 @@ pub async fn get_vote_time_range(
     );
     Ok((begin.full_value(), end.full_value()))
 }
+
+// TODO: for test only, remove it later
+
+pub async fn test_get_vote_time_range(ckb_client: &CkbRpcAsyncClient) -> Result<(u64, u64)> {
+    let current_epoch = ckb_client.get_current_epoch().await?;
+    let bn = ckb_client.get_tip_block_number().await?;
+
+    let begin = EpochNumberWithFraction::new(
+        current_epoch.number.into(),
+        Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number),
+        current_epoch.length.into(),
+    );
+
+    let index = Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number) + 20;
+    let add = if index >= current_epoch.length.into() {
+        (1, index - Into::<u64>::into(current_epoch.length))
+    } else {
+        (0, index)
+    };
+
+    let end = EpochNumberWithFraction::new(
+        Into::<u64>::into(current_epoch.number) + add.0,
+        add.1,
+        current_epoch.length.into(),
+    );
+    Ok((begin.full_value(), end.full_value()))
+}

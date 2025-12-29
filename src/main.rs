@@ -43,6 +43,8 @@ pub struct Args {
     #[clap(short, long)]
     indexer_did_url: String,
     #[clap(short, long)]
+    indexer_vote_url: String,
+    #[clap(short, long)]
     pds: String,
     #[clap(short, long, default_value = "")]
     whitelist: String,
@@ -80,6 +82,7 @@ async fn main() -> Result<()> {
         pds: args.pds.clone(),
         indexer_bind_url: args.indexer_bind_url.clone(),
         indexer_did_url: args.indexer_did_url.clone(),
+        indexer_vote_url: args.indexer_vote_url.clone(),
         ckb_client,
         whitelist: args
             .whitelist

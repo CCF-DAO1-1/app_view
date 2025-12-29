@@ -64,16 +64,8 @@ impl VoteMeta {
             .col(ColumnDef::new(Self::ProposalUri).string().not_null())
             .col(ColumnDef::new(Self::WhitelistId).string().not_null())
             .col(ColumnDef::new(Self::Candidates).array(ColumnType::String(Default::default())))
-            .col(
-                ColumnDef::new(Self::StartTime)
-                    .timestamp_with_time_zone()
-                    .not_null(),
-            )
-            .col(
-                ColumnDef::new(Self::EndTime)
-                    .timestamp_with_time_zone()
-                    .not_null(),
-            )
+            .col(ColumnDef::new(Self::StartTime).big_integer().not_null())
+            .col(ColumnDef::new(Self::EndTime).big_integer().not_null())
             .col(
                 ColumnDef::new(Self::Creater)
                     .string()

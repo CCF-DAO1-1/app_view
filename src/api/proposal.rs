@@ -307,7 +307,9 @@ pub async fn initiation_vote(
                 debug!("fetch vote_whitelist failed: {e}");
                 AppError::ValidateFailed("vote whitelist not found".to_string())
             })?;
+        // TODO
         let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
+        let time_range = crate::ckb::test_get_vote_time_range(&state.ckb_client).await?;
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             proposal_state: ProposalState::InitiationVote as i32,
@@ -498,104 +500,116 @@ pub fn vote_result(vote_meta: &VoteMetaRow, proposal: &ProposalSample) -> VoteRe
             .pointer("/data/proposalType")
             .and_then(|t| t.as_str())
     {
-        match ProposalState::from(vote_meta.proposal_state) {
-            ProposalState::InitiationVote | ProposalState::ReexamineVote => {
-                if proposal_type == "BudgetProposal" {
-                    if results.valid_weight_sum >= 1_8500_0000_0000_0000 {
-                        let agree =
-                            results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
-                        if agree >= 0.67 {
-                            return VoteResult::Agree;
-                        } else {
-                            return VoteResult::Against;
-                        }
-                    } else {
-                        return VoteResult::Failed;
-                    }
-                } else if let Some(proposal_budget) = proposal
-                    .record
-                    .pointer("/data/budget")
-                    .and_then(|t| t.as_u64())
-                {
-                    if results.valid_weight_sum >= (proposal_budget * 3_0000_0000) {
-                        let agree =
-                            results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
-                        if agree >= 0.51 {
-                            return VoteResult::Agree;
-                        } else {
-                            return VoteResult::Against;
-                        }
-                    } else {
-                        return VoteResult::Failed;
-                    }
-                }
-            }
-            ProposalState::AcceptanceVote
-            | ProposalState::DelayVote
-            | ProposalState::ReviewVote => {
-                if proposal_type == "BudgetProposal" {
-                    if results.valid_weight_sum >= 6200_0000_0000_0000 {
-                        let against =
-                            results.candidate_votes[2] as f64 / results.valid_weight_sum as f64;
-                        if against > 0.67 {
-                            return VoteResult::Against;
-                        } else {
-                            return VoteResult::Agree;
-                        }
-                    } else {
-                        return VoteResult::Agree;
-                    }
-                } else if let Some(proposal_budget) = proposal
-                    .record
-                    .pointer("/data/budget")
-                    .and_then(|t| t.as_u64())
-                {
-                    if results.valid_weight_sum >= (proposal_budget * 1_0000_0000) {
-                        let against =
-                            results.candidate_votes[2] as f64 / results.valid_weight_sum as f64;
-                        if against > 0.51 {
-                            return VoteResult::Against;
-                        } else {
-                            return VoteResult::Agree;
-                        }
-                    } else {
-                        return VoteResult::Agree;
-                    }
-                }
-            }
-            ProposalState::RectificationVote => {
-                if proposal_type == "BudgetProposal" {
-                    if results.valid_weight_sum >= 6200_0000_0000_0000 {
-                        let agree =
-                            results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
-                        if agree >= 0.67 {
-                            return VoteResult::Agree;
-                        } else {
-                            return VoteResult::Against;
-                        }
-                    } else {
-                        return VoteResult::Against;
-                    }
-                } else if let Some(proposal_budget) = proposal
-                    .record
-                    .pointer("/data/budget")
-                    .and_then(|t| t.as_u64())
-                {
-                    if results.valid_weight_sum >= (proposal_budget * 1_0000_0000) {
-                        let agree =
-                            results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
-                        if agree >= 0.51 {
-                            return VoteResult::Agree;
-                        } else {
-                            return VoteResult::Against;
-                        }
-                    } else {
-                        return VoteResult::Against;
-                    }
-                }
-            }
-            _ => (),
-        }
+        return calculate_vote_result(vote_meta.proposal_state, proposal, results, proposal_type);
     }
     VoteResult::Voting
+}
+
+pub fn calculate_vote_result(
+    proposal_state: i32,
+    proposal: &ProposalSample,
+    results: VoteResults,
+    proposal_type: &str,
+) -> VoteResult {
+    debug!(
+        "calculate_vote_result: proposal_type: {proposal_type}, proposal_state: {proposal_state}",
+    );
+    match ProposalState::from(proposal_state) {
+        ProposalState::InitiationVote | ProposalState::ReexamineVote => {
+            if proposal_type == "BudgetProposal" {
+                if results.valid_weight_sum >= 1_8500_0000_0000_0000 {
+                    let agree = results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
+                    if agree >= 0.67 {
+                        return VoteResult::Agree;
+                    } else {
+                        return VoteResult::Against;
+                    }
+                } else {
+                    return VoteResult::Failed;
+                }
+            } else if let Some(proposal_budget) = proposal
+                .record
+                .pointer("/data/budget")
+                .and_then(|t| t.as_str())
+                .and_then(|t| t.parse::<u64>().ok())
+            {
+                debug!("proposal_budget: {}", proposal_budget);
+                debug!("valid_weight_sum: {}", results.valid_weight_sum);
+                if results.valid_weight_sum >= (proposal_budget * 3_0000_0000) {
+                    let agree = results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
+                    if agree >= 0.51 {
+                        return VoteResult::Agree;
+                    } else {
+                        return VoteResult::Against;
+                    }
+                } else {
+                    return VoteResult::Failed;
+                }
+            }
+        }
+        ProposalState::AcceptanceVote | ProposalState::DelayVote | ProposalState::ReviewVote => {
+            if proposal_type == "BudgetProposal" {
+                if results.valid_weight_sum >= 6200_0000_0000_0000 {
+                    let against =
+                        results.candidate_votes[2] as f64 / results.valid_weight_sum as f64;
+                    if against > 0.67 {
+                        return VoteResult::Against;
+                    } else {
+                        return VoteResult::Agree;
+                    }
+                } else {
+                    return VoteResult::Agree;
+                }
+            } else if let Some(proposal_budget) = proposal
+                .record
+                .pointer("/data/budget")
+                .and_then(|t| t.as_str())
+                .and_then(|t| t.parse::<u64>().ok())
+            {
+                if results.valid_weight_sum >= (proposal_budget * 1_0000_0000) {
+                    let against =
+                        results.candidate_votes[2] as f64 / results.valid_weight_sum as f64;
+                    if against > 0.51 {
+                        return VoteResult::Against;
+                    } else {
+                        return VoteResult::Agree;
+                    }
+                } else {
+                    return VoteResult::Agree;
+                }
+            }
+        }
+        ProposalState::RectificationVote => {
+            if proposal_type == "BudgetProposal" {
+                if results.valid_weight_sum >= 6200_0000_0000_0000 {
+                    let agree = results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
+                    if agree >= 0.67 {
+                        return VoteResult::Agree;
+                    } else {
+                        return VoteResult::Against;
+                    }
+                } else {
+                    return VoteResult::Against;
+                }
+            } else if let Some(proposal_budget) = proposal
+                .record
+                .pointer("/data/budget")
+                .and_then(|t| t.as_str())
+                .and_then(|t| t.parse::<u64>().ok())
+            {
+                if results.valid_weight_sum >= (proposal_budget * 1_0000_0000) {
+                    let agree = results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
+                    if agree >= 0.51 {
+                        return VoteResult::Agree;
+                    } else {
+                        return VoteResult::Against;
+                    }
+                } else {
+                    return VoteResult::Against;
+                }
+            }
+        }
+        _ => (),
+    }
+    VoteResult::Failed
 }
