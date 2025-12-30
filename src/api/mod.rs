@@ -1,4 +1,5 @@
 pub mod like;
+pub mod meeting;
 pub mod proposal;
 pub mod record;
 pub mod reply;
@@ -6,7 +7,6 @@ pub mod repo;
 pub mod task;
 pub mod timeline;
 pub mod vote;
-pub mod meeting;
 
 use color_eyre::eyre::{OptionExt, eyre};
 use k256::ecdsa::{Signature, VerifyingKey, signature::Verifier};
@@ -60,6 +60,7 @@ use crate::{
         task::submit_delay_report,
         task::create_meeting,
         task::submit_meeting_report,
+        task::submit_acceptance_report,
         meeting::get,
     ),
     components(schemas(

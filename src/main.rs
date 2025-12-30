@@ -161,6 +161,10 @@ async fn main() -> Result<()> {
             post(api::task::submit_meeting_report),
         )
         .route("/api/task/create_meeting", post(api::task::create_meeting))
+        .route(
+            "/api/task/submit_acceptance_report",
+            post(api::task::submit_acceptance_report),
+        )
         .route("/api/meeting", get(api::meeting::get))
         .layer((TimeoutLayer::with_status_code(
             reqwest::StatusCode::REQUEST_TIMEOUT,

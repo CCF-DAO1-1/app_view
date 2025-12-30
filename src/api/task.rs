@@ -26,7 +26,7 @@ use crate::{
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
-        meeting::{Meeting, MeetingRow},
+        meeting::{Meeting, MeetingRow, MeetingState},
         proposal::{Proposal, ProposalRow, ProposalSample, ProposalState, has_next_milestone},
         task::{Task, TaskRow, TaskState, TaskType, TaskView},
         timeline::{Timeline, TimelineRow, TimelineType},
@@ -286,6 +286,20 @@ pub async fn submit_meeting_report(
     body.verify_signature(&state.indexer_did_url)
         .await
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Meeting::build_select()
+        .and_where(Expr::col(Meeting::Id).eq(body.params.meeting_id))
+        .build_sqlx(PostgresQueryBuilder);
+    let meeting_row: MeetingRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not meeting: {e}")))?;
+
+    if meeting_row.report.is_some() || meeting_row.state == MeetingState::Finished as i32 {
+        return Err(AppError::ValidateFailed(
+            "meeting report already submitted".to_string(),
+        ));
+    }
 
     Meeting::update_report(&state.db, body.params.meeting_id, &body.params.report).await?;
 
@@ -582,7 +596,7 @@ pub async fn send_funds(
 pub struct SubmitReportParams {
     pub proposal_uri: String,
 
-    pub report_url: String,
+    pub report: String,
 
     pub timestamp: i64,
 }
@@ -809,4 +823,74 @@ pub async fn submit_delay_report(
         "vote_meta": vote_meta_row,
         "outputsData": outputs_data
     })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/task/submit_acceptance_report",
+    description = "提交结项报告"
+)]
+pub async fn submit_acceptance_report(
+    State(state): State<AppView>,
+    Json(body): Json<SignedBody<SubmitReportParams>>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Proposal::build_sample()
+        .and_where(Expr::col(Proposal::Uri).eq(body.params.proposal_uri.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let proposal_sample: ProposalSample = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("proposal not found: {e}")))?;
+
+    if proposal_sample.state != ProposalState::WaitingForAcceptanceReport as i32 {
+        return Err(AppError::ValidateFailed(
+            "proposal is not waiting for acceptance report".to_string(),
+        ));
+    }
+
+    Proposal::update_state(
+        &state.db,
+        &body.params.proposal_uri,
+        ProposalState::Completed as i32,
+    )
+    .await?;
+
+    Timeline::insert(
+        &state.db,
+        &TimelineRow {
+            id: 0,
+            timeline_type: TimelineType::SubmitAcceptanceReport as i32,
+            message: body.params.report.clone(),
+            target: body.params.proposal_uri.clone(),
+            operator: body.did.clone(),
+            timestamp: chrono::Local::now(),
+        },
+    )
+    .await?;
+
+    Task::complete(
+        &state.db,
+        &proposal_sample.uri,
+        TaskType::SubmitAcceptanceReport,
+        &body.did,
+    )
+    .await
+    .ok();
+
+    Ok(ok_simple())
 }
