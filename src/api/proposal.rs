@@ -18,13 +18,14 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    api::{SignedBody, SignedParam, ToTimestamp, build_author, vote::build_vote_meta},
+    api::{SignedBody, SignedParam, ToTimestamp, build_author, reply, vote::build_vote_meta},
     ckb::get_vote_time_range,
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
         meeting::{Meeting, MeetingRow, MeetingState},
         proposal::{Proposal, ProposalRow, ProposalSample, ProposalState, ProposalView},
+        reply::{Reply, ReplyRow, ReplySampleRow},
         task::{Task, TaskRow, TaskState, TaskType},
         timeline::{Timeline, TimelineRow, TimelineType},
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteResult, VoteResults},
@@ -160,7 +161,9 @@ pub async fn receiver_addr(
         .await
         .map_err(|e| eyre!("exec sql failed: {e}"))?;
 
-    let (sql, values) = Proposal::build_sample()
+    let (sql, values) = sea_query::Query::select()
+        .expr(Expr::col((Proposal::Table, Proposal::Uri)).count_distinct())
+        .from(Proposal::Table)
         .and_where(Expr::col(Proposal::ReceiverAddr).is_not_null())
         .build_sqlx(PostgresQueryBuilder);
     let total: (i64,) = query_as_with(&sql, values.clone())
@@ -170,6 +173,139 @@ pub async fn receiver_addr(
 
     Ok(ok(json!({
         "rows": rows,
+        "page": query.page,
+        "per_page": query.per_page,
+        "total":  total.0
+    })))
+}
+
+#[derive(Debug, Validate, Deserialize, IntoParams)]
+#[serde(default)]
+pub struct ListSelfQuery {
+    pub did: String,
+    #[validate(range(min = 1))]
+    pub page: u64,
+    #[validate(range(min = 1))]
+    pub per_page: u64,
+}
+
+impl Default for ListSelfQuery {
+    fn default() -> Self {
+        Self {
+            did: String::new(),
+            page: 1,
+            per_page: 20,
+        }
+    }
+}
+
+#[utoipa::path(get, path = "/api/proposal/list_self", params(ListSelfQuery))]
+pub async fn list_self(
+    State(state): State<AppView>,
+    Query(query): Query<ListSelfQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    query
+        .validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+    let offset = query.per_page * (query.page - 1);
+    let (sql, values) = Proposal::build_sample()
+        .and_where(Expr::col(Proposal::Repo).eq(&query.did))
+        .order_by(Proposal::Updated, Order::Desc)
+        .limit(query.per_page)
+        .offset(offset)
+        .build_sqlx(PostgresQueryBuilder);
+    let rows: Vec<ProposalSample> = query_as_with(&sql, values)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| eyre!("exec sql failed: {e}"))?;
+
+    let (sql, values) = sea_query::Query::select()
+        .expr(Expr::col((Proposal::Table, Proposal::Uri)).count_distinct())
+        .from(Proposal::Table)
+        .and_where(Expr::col(Proposal::Repo).eq(&query.did))
+        .build_sqlx(PostgresQueryBuilder);
+    let total: (i64,) = query_as_with(&sql, values.clone())
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| eyre!("exec sql failed: {e}"))?;
+
+    Ok(ok(json!({
+        "rows": rows,
+        "page": query.page,
+        "per_page": query.per_page,
+        "total":  total.0
+    })))
+}
+
+#[utoipa::path(get, path = "/api/proposal/replied", params(ListSelfQuery))]
+pub async fn replied(
+    State(state): State<AppView>,
+    Query(query): Query<ListSelfQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    query
+        .validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+    let offset = query.per_page * (query.page - 1);
+
+    let (sql, values) = sea_query::Query::select()
+        .columns([
+            (Reply::Table, Reply::Uri),
+            (Reply::Table, Reply::Cid),
+            (Reply::Table, Reply::Repo),
+            (Reply::Table, Reply::Proposal),
+            (Reply::Table, Reply::To),
+            (Reply::Table, Reply::Text),
+            (Reply::Table, Reply::Updated),
+            (Reply::Table, Reply::Created),
+        ])
+        .and_where(Expr::col(Reply::Repo).eq(&query.did))
+        .from(Reply::Table)
+        .limit(query.per_page)
+        .offset(offset)
+        .build_sqlx(PostgresQueryBuilder);
+    let replies: Vec<ReplySampleRow> = query_as_with(&sql, values.clone())
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| eyre!("exec sql failed: {e}"))?;
+    let proposal_uris = replies
+        .iter()
+        .map(|r| r.proposal.clone())
+        .collect::<Vec<_>>();
+
+    let (sql, values) = Proposal::build_sample()
+        .and_where(Expr::col(Proposal::Uri).is_in(&proposal_uris))
+        .order_by(Proposal::Updated, Order::Desc)
+        .build_sqlx(PostgresQueryBuilder);
+    let proposals: Vec<ProposalSample> = query_as_with(&sql, values)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| eyre!("exec sql failed: {e}"))?;
+    let proposal_map = proposals
+        .into_iter()
+        .map(|p| (p.uri.clone(), p))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    let mut views = vec![];
+    for reply in replies {
+        let mut view = json!(reply);
+        if let Some(proposal) = proposal_map.get(&reply.proposal) {
+            view["proposal"] = json!(proposal);
+        }
+        views.push(view);
+    }
+
+    let (sql, values) = sea_query::Query::select()
+        .expr(Expr::col((Reply::Table, Reply::Uri)).count_distinct())
+        .and_where(Expr::col(Reply::Repo).eq(&query.did))
+        .from(Reply::Table)
+        .build_sqlx(PostgresQueryBuilder);
+    let total: (i64,) = query_as_with(&sql, values.clone())
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| eyre!("exec sql failed: {e}"))?;
+
+    Ok(ok(json!({
+        "rows": views,
         "page": query.page,
         "per_page": query.per_page,
         "total":  total.0

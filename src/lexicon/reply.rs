@@ -117,6 +117,18 @@ impl Reply {
 }
 
 #[derive(sqlx::FromRow, Debug, Serialize)]
+pub struct ReplySampleRow {
+    pub uri: String,
+    pub cid: String,
+    pub repo: String,
+    pub proposal: String,
+    pub to: String,
+    pub text: String,
+    pub updated: DateTime<Local>,
+    pub created: DateTime<Local>,
+}
+
+#[derive(sqlx::FromRow, Debug, Serialize)]
 pub struct ReplyRow {
     pub uri: String,
     pub cid: String,
