@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use chrono::DateTime;
 use color_eyre::eyre::eyre;
 use common_x::restful::{
     axum::{
@@ -25,6 +26,7 @@ use crate::{
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
+        meeting::{Meeting, MeetingRow},
         proposal::{Proposal, ProposalRow, ProposalSample, ProposalState, has_next_milestone},
         task::{Task, TaskRow, TaskState, TaskType, TaskView},
         timeline::{Timeline, TimelineRow, TimelineType},
@@ -148,6 +150,159 @@ pub async fn get(
         "per_page": query.per_page,
         "total":  total.0
     })))
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct CreateMeetingParams {
+    pub proposal_uri: String,
+    pub title: String,
+    pub start_time: String,
+    pub url: String,
+    pub description: String,
+    pub timestamp: i64,
+}
+
+impl SignedParam for CreateMeetingParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
+}
+
+#[utoipa::path(post, path = "/api/task/create_meeting", description = "组织AMA会议")]
+pub async fn create_meeting(
+    State(state): State<AppView>,
+    Json(body): Json<SignedBody<CreateMeetingParams>>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let admins = Administrator::fetch_all(&state.db)
+        .await
+        .iter()
+        .map(|admin| admin.did.clone())
+        .collect::<Vec<_>>();
+
+    let meeting_row = MeetingRow {
+        id: 0,
+        title: body.params.title.clone(),
+        start_time: DateTime::from_str(&body.params.start_time)
+            .map_err(|e| AppError::ValidateFailed(format!("invalid start_time: {e}")))?,
+        end_time: DateTime::from_str(&body.params.start_time)
+            .map_err(|e| AppError::ValidateFailed(format!("invalid start_time: {e}")))?,
+        location: "".to_string(),
+        url: body.params.url.clone(),
+        description: body.params.description.clone(),
+        proposal_uri: body.params.proposal_uri.clone(),
+        state: 0,
+        report: None,
+        creater: body.did.clone(),
+        updated: chrono::Local::now(),
+        created: chrono::Local::now(),
+    };
+
+    Meeting::insert(&state.db, &meeting_row).await?;
+
+    Task::insert(
+        &state.db,
+        &TaskRow {
+            id: 0,
+            task_type: TaskType::SubmitAMAReport as i32,
+            message: "SubmitAMAReport".to_string(),
+            target: body.params.proposal_uri.clone(),
+            operators: admins,
+            processor: None,
+            deadline: chrono::Local::now() + chrono::Duration::days(7),
+            state: TaskState::Unread as i32,
+            updated: chrono::Local::now(),
+            created: chrono::Local::now(),
+        },
+    )
+    .await?;
+
+    Timeline::insert(
+        &state.db,
+        &TimelineRow {
+            id: 0,
+            timeline_type: TimelineType::CreateAMA as i32,
+            message: format!("AMA meeting created by {}", body.did),
+            target: body.params.proposal_uri.clone(),
+            operator: body.did.clone(),
+            timestamp: chrono::Local::now(),
+        },
+    )
+    .await?;
+
+    Ok(ok_simple())
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct SubmitMeetingReportParams {
+    pub proposal_uri: String,
+    pub meeting_id: i32,
+    pub report: String,
+    pub timestamp: i64,
+}
+
+impl SignedParam for SubmitMeetingReportParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/task/submit_meeting_report",
+    description = "提交AMA会议报告"
+)]
+pub async fn submit_meeting_report(
+    State(state): State<AppView>,
+    Json(body): Json<SignedBody<SubmitMeetingReportParams>>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    Meeting::update_report(&state.db, body.params.meeting_id, &body.params.report).await?;
+
+    Timeline::insert(
+        &state.db,
+        &TimelineRow {
+            id: 0,
+            timeline_type: TimelineType::SubmitAMAReport as i32,
+            message: body.params.report.clone(),
+            target: body.params.proposal_uri.clone(),
+            operator: body.did.clone(),
+            timestamp: chrono::Local::now(),
+        },
+    )
+    .await?;
+
+    Ok(ok_simple())
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]

@@ -234,6 +234,9 @@ pub async fn check_vote_meta_finished(
                     Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
                         .await
                         .ok();
+                    Task::complete(&db, &proposal_uri, TaskType::SubmitAMAReport, "SYSTEM")
+                        .await
+                        .ok();
                 }
                 ProposalState::MilestoneVote => {
                     Proposal::update_state(

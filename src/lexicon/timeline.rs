@@ -43,6 +43,10 @@ pub enum TimelineType {
     RectificationVote,
     /// 提交验收报告
     SubmitAcceptanceReport,
+    /// 组织AMA
+    CreateAMA,
+    /// 提交AMA报告
+    SubmitAMAReport,
 }
 
 #[derive(Iden, Debug, Clone, Copy)]

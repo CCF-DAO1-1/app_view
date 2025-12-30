@@ -23,6 +23,7 @@ use crate::{
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
+        meeting::{Meeting, MeetingRow, MeetingState},
         proposal::{Proposal, ProposalRow, ProposalSample, ProposalState, ProposalView},
         task::{Task, TaskRow, TaskState, TaskType},
         timeline::{Timeline, TimelineRow, TimelineType},
@@ -268,7 +269,18 @@ pub async fn initiation_vote(
         ));
     }
 
-    // TODO check AMA completed
+    //  check AMA completed
+    let (sql, values) = Meeting::build_select()
+        .and_where(Expr::col(Meeting::ProposalUri).eq(&params.proposal_uri))
+        .and_where(Expr::col(Meeting::State).eq(MeetingState::Finished as i32))
+        .build_sqlx(PostgresQueryBuilder);
+    let _meeting_row: MeetingRow = query_as_with(&sql, values)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| {
+            debug!("fetch meeting failed: {e}");
+            AppError::ValidateFailed("AMA meeting not completed".to_string())
+        })?;
 
     // check proposaler's weight > 10_000_000_000_000
     let ckb_addr = crate::ckb::get_ckb_addr_by_did(&state.ckb_client, &did).await?;

@@ -6,6 +6,7 @@ pub mod repo;
 pub mod task;
 pub mod timeline;
 pub mod vote;
+pub mod meeting;
 
 use color_eyre::eyre::{OptionExt, eyre};
 use k256::ecdsa::{Signature, VerifyingKey, signature::Verifier};
@@ -56,6 +57,9 @@ use crate::{
         task::get,
         task::send_funds,
         task::submit_milestone_report,
+        task::create_meeting,
+        task::submit_meeting_report,
+        meeting::get,
     ),
     components(schemas(
         record::NewRecord,
@@ -70,6 +74,8 @@ use crate::{
         vote::PrepareBody,
         SignedBody<task::SendFundsParams>,
         SignedBody<task::SubmitReportParams>,
+        SignedBody<task::CreateMeetingParams>,
+        SignedBody<task::SubmitMeetingReportParams>,
 
         // lexicon
         lexicon::proposal::ProposalState,

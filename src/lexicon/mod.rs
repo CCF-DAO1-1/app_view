@@ -1,5 +1,6 @@
 pub mod administrator;
 pub mod like;
+pub mod meeting;
 pub mod profile;
 pub mod proposal;
 pub mod reply;

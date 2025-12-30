@@ -10,6 +10,7 @@ use common_x::restful::axum::routing::get;
 use common_x::restful::axum::{Router, routing::post};
 use dao::api::ApiDoc;
 use dao::lexicon::administrator::Administrator;
+use dao::lexicon::meeting::Meeting;
 use dao::lexicon::profile::Profile;
 use dao::lexicon::task::Task;
 use dao::lexicon::timeline::Timeline;
@@ -74,6 +75,7 @@ async fn main() -> Result<()> {
     Vote::init(&db).await?;
     Timeline::init(&db).await?;
     Task::init(&db).await?;
+    Meeting::init(&db).await?;
 
     let ckb_client = CkbRpcAsyncClient::new(&args.ckb_url);
 
@@ -150,6 +152,12 @@ async fn main() -> Result<()> {
             "/api/task/submit_milestone_report",
             post(api::task::submit_milestone_report),
         )
+        .route(
+            "/api/task/submit_meeting_report",
+            post(api::task::submit_meeting_report),
+        )
+        .route("/api/task/create_meeting", post(api::task::create_meeting))
+        .route("/api/meeting", get(api::meeting::get))
         .layer((TimeoutLayer::with_status_code(
             reqwest::StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(10),
