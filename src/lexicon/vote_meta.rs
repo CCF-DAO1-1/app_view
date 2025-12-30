@@ -184,7 +184,7 @@ pub struct VoteMetaRow {
     pub created: DateTime<Local>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VoteResults {
     pub vote_sum: u64,
     pub valid_vote_sum: u64,

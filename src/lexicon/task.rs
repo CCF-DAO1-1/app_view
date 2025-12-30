@@ -208,7 +208,7 @@ pub struct TaskRow {
 pub struct TaskView {
     pub id: i32,
     pub task_type: i32,
-    pub message: String,
+    pub message: Value,
     pub target: Value,
     pub operators: Vec<String>,
     pub processor: Value,

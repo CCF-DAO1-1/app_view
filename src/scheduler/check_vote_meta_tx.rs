@@ -50,6 +50,7 @@ pub async fn check_vote_meta_tx(
             (VoteMeta::Table, VoteMeta::Id),
             (VoteMeta::Table, VoteMeta::TxHash),
             (VoteMeta::Table, VoteMeta::ProposalUri),
+            (VoteMeta::Table, VoteMeta::ProposalState),
             (VoteMeta::Table, VoteMeta::Creater),
             (VoteMeta::Table, VoteMeta::Created),
         ])
@@ -58,7 +59,7 @@ pub async fn check_vote_meta_tx(
         .build_sqlx(PostgresQueryBuilder);
 
     #[allow(clippy::type_complexity)]
-    let rows: Option<Vec<(i32, Option<String>, String, String, DateTime<Local>)>> =
+    let rows: Option<Vec<(i32, Option<String>, String, i32, String, DateTime<Local>)>> =
         sqlx::query_as_with(&sql, values.clone())
             .fetch_all(&db)
             .await
@@ -68,7 +69,7 @@ pub async fn check_vote_meta_tx(
             })
             .ok();
     if let Some(rows) = rows {
-        for (id, tx_hash, proposal_uri, creater, created) in rows {
+        for (id, tx_hash, proposal_uri, proposal_state, creater, created) in rows {
             if let Some(tx_hash) = tx_hash {
                 let tx_status = get_tx_status(&ckb_client, &tx_hash).await;
                 if let Ok(tx_status) = tx_status {
@@ -96,24 +97,31 @@ pub async fn check_vote_meta_tx(
 
                     if meta_state == VoteMetaState::Committed {
                         // update proposal state
-                        let lines = Proposal::update_state(
-                            &db,
-                            &proposal_uri,
-                            ProposalState::InitiationVote as i32,
-                        )
-                        .await
-                        .map_err(|e| error!("update proposal state failed: {e}"))
-                        .unwrap_or(0);
-
+                        let lines = Proposal::update_state(&db, &proposal_uri, proposal_state)
+                            .await
+                            .map_err(|e| error!("update proposal state failed: {e}"))
+                            .unwrap_or(0);
                         if lines > 0 {
-                            debug!("Proposal({proposal_uri}) marked as InitiationVote");
+                            debug!(
+                                "Proposal({proposal_uri}) marked as {:?}",
+                                ProposalState::from(proposal_state)
+                            );
+                            let timeline_type = match ProposalState::from(proposal_state) {
+                                ProposalState::InitiationVote => TimelineType::InitiationVote,
+                                ProposalState::MilestoneVote => TimelineType::MilestoneVote,
+                                ProposalState::DelayVote => TimelineType::DelayVote,
+                                ProposalState::ReviewVote => TimelineType::ReviewVote,
+                                ProposalState::ReexamineVote => TimelineType::ReexamineVote,
+                                ProposalState::RectificationVote => TimelineType::RectificationVote,
+                                _ => continue,
+                            };
 
                             Timeline::insert(
                                 &db,
                                 &TimelineRow {
                                     id: 0,
-                                    timeline_type: TimelineType::InitiationVote as i32,
-                                    message: "InitiationVote".to_string(),
+                                    timeline_type: timeline_type as i32,
+                                    message: format!("{timeline_type:?}"),
                                     target: proposal_uri.clone(),
                                     operator: creater,
                                     timestamp: chrono::Local::now(),

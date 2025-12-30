@@ -467,7 +467,10 @@ pub async fn update_receiver_addr(
         &TimelineRow {
             id: 0,
             timeline_type: TimelineType::UpdateReceiverAddr as i32,
-            message: "UpdateReceiverAddr".to_string(),
+            message: json!({
+                "receiver_addr": body.params.receiver_addr,
+            })
+            .to_string(),
             target: body.params.proposal_uri.clone(),
             operator: body.did.clone(),
             timestamp: chrono::Local::now(),

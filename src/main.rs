@@ -146,6 +146,10 @@ async fn main() -> Result<()> {
         .route("/api/timeline", get(api::timeline::get))
         .route("/api/task", get(api::task::get))
         .route("/api/task/send_funds", post(api::task::send_funds))
+        .route(
+            "/api/task/submit_milestone_report",
+            post(api::task::submit_milestone_report),
+        )
         .layer((TimeoutLayer::with_status_code(
             reqwest::StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(10),

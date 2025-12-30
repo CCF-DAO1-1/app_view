@@ -11,25 +11,37 @@ use utoipa::ToSchema;
 pub enum TimelineType {
     #[default]
     Default = 0,
-    /// 1 创建提案
+    /// 创建提案
     ProposalCreated,
-    /// 2 编辑提案
+    /// 编辑提案
     ProposalEdited,
-    /// 3 发起立项投票
+    /// 发起立项投票
     InitiationVote,
-    /// 4 维护项目金库地址
+    /// 维护项目金库地址
     UpdateReceiverAddr,
-    /// 5 计票完成
+    /// 计票完成
     VoteFinished,
-    /// 6 发送初始资金
+    /// 发送初始资金
     SendInitialFund,
-    /// 7 提交里程碑报告
+    /// 提交里程碑报告
     SubmitMilestoneReport,
-    /// 8 提交延期报告
+    /// 提交延期报告
     SubmitDelayReport,
-    /// 9 发送里程碑资金
+    /// 发起里程碑投票
+    MilestoneVote,
+    /// 发起延期投票
+    DelayVote,
+    /// 发送里程碑资金
     SendMilestoneFund,
-    /// 10 提交验收报告
+    /// 发起进度复核投票
+    ReviewVote,
+    /// 发起复核投票
+    ReexamineVote,
+    /// 发起验收投票
+    AcceptanceVote,
+    /// 发起整改投票
+    RectificationVote,
+    /// 提交验收报告
     SubmitAcceptanceReport,
 }
 

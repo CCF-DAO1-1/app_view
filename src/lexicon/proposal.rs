@@ -343,17 +343,14 @@ impl ProposalView {
     }
 }
 
-pub fn has_next_milestone(proposal_sample: &ProposalSample) -> Option<usize> {
+pub fn has_next_milestone(proposal_sample: &ProposalSample) -> Option<(usize, Value)> {
     if let Some(milestones) = proposal_sample
         .record
         .pointer("/data/milestones")
         .and_then(|m| m.as_array())
     {
-        let next_milestone = milestones.get(proposal_sample.progress as usize + 1);
-        if let Some(milestone) = next_milestone {
-            debug!("next_milestone: {:?}", milestone);
-            return Some(proposal_sample.progress as usize + 1);
-        }
+        let next_index = proposal_sample.progress as usize + 1;
+        return milestones.get(next_index).map(|m| (next_index, m.clone()));
     }
     None
 }

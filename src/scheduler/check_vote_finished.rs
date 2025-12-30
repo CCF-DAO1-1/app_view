@@ -163,7 +163,7 @@ pub async fn check_vote_meta_finished(
             }
         }
 
-        let vote_result = VoteResults {
+        let vote_results = VoteResults {
             vote_sum: vote_sum as u64,
             valid_vote_sum: valid_vote_sum as u64,
             weight_sum,
@@ -171,9 +171,9 @@ pub async fn check_vote_meta_finished(
             valid_votes,
             candidate_votes,
         };
-        debug!("vote_result: {:?}", vote_result);
+        debug!("vote_result: {:?}", vote_results);
         // update vote_meta state
-        VoteMeta::update_results(&db, id, json!(vote_result)).await?;
+        VoteMeta::update_results(&db, id, json!(vote_results)).await?;
 
         let (sql, value) = Proposal::build_sample()
             .and_where(Expr::col(Proposal::Uri).eq(proposal_uri.clone()))
@@ -185,8 +185,12 @@ pub async fn check_vote_meta_finished(
             .pointer("/data/proposalType")
             .and_then(|t| t.as_str())
             .ok_or_eyre("")?;
-        let vote_result =
-            calculate_vote_result(proposal_state, &proposal_sample, vote_result, proposal_type);
+        let vote_result = calculate_vote_result(
+            proposal_state,
+            &proposal_sample,
+            vote_results.clone(),
+            proposal_type,
+        );
 
         debug!(
             "vote_meta id: {} finished with result: {:?}",
@@ -231,7 +235,45 @@ pub async fn check_vote_meta_finished(
                         .await
                         .ok();
                 }
-                ProposalState::MilestoneVote => todo!(),
+                ProposalState::MilestoneVote => {
+                    Proposal::update_state(
+                        &db,
+                        &proposal_uri,
+                        ProposalState::WaitingForMilestoneFund as i32,
+                    )
+                    .await?;
+
+                    let admins = Administrator::fetch_all(&db)
+                        .await
+                        .iter()
+                        .map(|admin| admin.did.clone())
+                        .collect();
+                    let milestone = proposal_sample
+                        .record
+                        .pointer("/data/milestones")
+                        .and_then(|m| m.as_array())
+                        .and_then(|ms| ms.get(proposal_sample.progress as usize));
+                    Task::insert(
+                        &db,
+                        &TaskRow {
+                            id: 0,
+                            task_type: TaskType::SendMilestoneFund as i32,
+                            message: milestone
+                                .map(|m| m.to_string())
+                                .unwrap_or("SendMilestoneFund".to_string()),
+                            target: proposal_uri.clone(),
+                            operators: admins,
+                            processor: None,
+                            deadline: chrono::Local::now() + chrono::Duration::days(21),
+                            state: TaskState::Unread as i32,
+                            updated: chrono::Local::now(),
+                            created: chrono::Local::now(),
+                        },
+                    )
+                    .await
+                    .map_err(|e| error!("insert task failed: {e}"))
+                    .ok();
+                }
                 ProposalState::DelayVote => todo!(),
                 ProposalState::ReviewVote => todo!(),
                 ProposalState::ReexamineVote => todo!(),
@@ -247,7 +289,7 @@ pub async fn check_vote_meta_finished(
             &TimelineRow {
                 id: 0,
                 timeline_type: TimelineType::VoteFinished as i32,
-                message: "VoteFinished".to_string(),
+                message: json!(vote_results).to_string(),
                 target: proposal_uri.clone(),
                 operator: creater,
                 timestamp: chrono::Local::now(),

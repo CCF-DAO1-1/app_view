@@ -137,7 +137,7 @@ pub async fn create(
                 &TimelineRow {
                     id: 0,
                     timeline_type: TimelineType::ProposalCreated as i32,
-                    message: "created".to_string(),
+                    message: "ProposalCreated".to_string(),
                     target: uri.to_string(),
                     operator: new_record.repo.clone(),
                     timestamp: chrono::Local::now(),
@@ -211,7 +211,7 @@ pub async fn update(
                 &TimelineRow {
                     id: 0,
                     timeline_type: TimelineType::ProposalEdited as i32,
-                    message: "edited".to_string(),
+                    message: "ProposalEdited".to_string(),
                     target: uri.to_string(),
                     operator: new_record.repo.clone(),
                     timestamp: chrono::Local::now(),
