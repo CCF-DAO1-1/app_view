@@ -149,6 +149,7 @@ async fn main() -> Result<()> {
         )
         .route("/api/vote/status", post(api::vote::status))
         .route("/api/vote/detail", get(api::vote::detail))
+        .route("/api/vote/list_self", get(api::vote::list_self))
         .route("/api/timeline", get(api::timeline::get))
         .route("/api/task", get(api::task::get))
         .route("/api/task/send_funds", post(api::task::send_funds))

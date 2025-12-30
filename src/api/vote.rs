@@ -105,7 +105,7 @@ pub async fn whitelist(State(state): State<AppView>) -> Result<impl IntoResponse
         .await
         .map_err(|e| {
             debug!("exec sql failed: {e}");
-            AppError::NotFound
+            AppError::ExecSqlFailed(e.to_string())
         })?;
     Ok(ok(row))
 }
@@ -335,7 +335,7 @@ pub async fn update_meta_tx_hash(
         .await
         .map_err(|e| {
             debug!("exec sql failed: {e}");
-            AppError::NotFound
+            AppError::ExecSqlFailed(e.to_string())
         })?;
 
     if vote_meta_row.creater != body.did {
@@ -554,7 +554,7 @@ pub async fn detail(
         .await
         .map_err(|e| {
             debug!("exec sql failed: {e}");
-            AppError::NotFound
+            AppError::ExecSqlFailed(e.to_string())
         })?;
 
     if vote_meta_row.state != (VoteMetaState::Committed as i32)
@@ -595,6 +595,95 @@ pub async fn detail(
         "weight_sum": weight_sum,
         "valid_weight_sum": valid_weight_sum,
         "candidate_votes": candidate_votes
+    })))
+}
+
+#[derive(Debug, Validate, Deserialize, IntoParams)]
+#[serde(default)]
+pub struct ListSelfQuery {
+    pub did: String,
+    #[validate(range(min = 1))]
+    pub page: u64,
+    #[validate(range(min = 1))]
+    pub per_page: u64,
+}
+
+impl Default for ListSelfQuery {
+    fn default() -> Self {
+        Self {
+            did: "".to_string(),
+            page: 1,
+            per_page: 20,
+        }
+    }
+}
+
+#[utoipa::path(get, path = "/api/vote/list_self", params(ListSelfQuery))]
+pub async fn list_self(
+    State(state): State<AppView>,
+    Query(query): Query<ListSelfQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    query
+        .validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+    let offset = query.per_page * (query.page - 1);
+    let (sql, value) = Vote::build_select()
+        .and_where(Expr::col(Vote::Voter).eq(query.did.clone()))
+        .order_by(Vote::Created, Order::Desc)
+        .limit(query.per_page)
+        .offset(offset)
+        .build_sqlx(PostgresQueryBuilder);
+    let rows: Vec<VoteRow> = query_as_with(&sql, value)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| {
+            debug!("exec sql failed: {e}");
+            AppError::ExecSqlFailed(e.to_string())
+        })?;
+    let mut views = vec![];
+
+    for row in &rows {
+        let mut view = json!(row);
+        let (sql, value) = VoteMeta::build_select()
+            .and_where(Expr::col(VoteMeta::Id).eq(row.vote_meta_id))
+            .build_sqlx(PostgresQueryBuilder);
+        let vote_meta_row: VoteMetaRow = query_as_with(&sql, value)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| {
+                debug!("exec sql failed: {e}");
+                AppError::ExecSqlFailed(e.to_string())
+            })?;
+        view["vote_meta"] = json!(vote_meta_row);
+
+        let (sql, value) = Proposal::build_sample()
+            .and_where(Expr::col(Proposal::Uri).eq(vote_meta_row.proposal_uri.clone()))
+            .build_sqlx(PostgresQueryBuilder);
+        let proposal_row: ProposalSample = query_as_with(&sql, value)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| {
+                debug!("exec sql failed: {e}");
+                AppError::ExecSqlFailed(e.to_string())
+            })?;
+        view["proposal"] = json!(proposal_row);
+
+        views.push(view);
+    }
+
+    let (sql, value) = Vote::build_select()
+        .and_where(Expr::col(Vote::Voter).eq(query.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let total: (i64,) = query_as_with(&sql, value.clone())
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| eyre!("exec sql failed: {e}"))?;
+
+    Ok(ok(json!({
+        "rows": rows,
+        "page": query.page,
+        "per_page": query.per_page,
+        "total":  total.0
     })))
 }
 

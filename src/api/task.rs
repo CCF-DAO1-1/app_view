@@ -107,7 +107,7 @@ pub async fn get(
             .await
             .map_err(|e| {
                 debug!("exec sql failed: {e}");
-                AppError::NotFound
+                AppError::ExecSqlFailed(e.to_string())
             })?;
 
         let processor = if let Some(processor) = &row.processor {

@@ -163,7 +163,6 @@ pub async fn receiver_addr(
     let (sql, values) = Proposal::build_sample()
         .and_where(Expr::col(Proposal::ReceiverAddr).is_not_null())
         .build_sqlx(PostgresQueryBuilder);
-
     let total: (i64,) = query_as_with(&sql, values.clone())
         .fetch_one(&state.db)
         .await
@@ -205,7 +204,7 @@ pub async fn detail(
         .await
         .map_err(|e| {
             debug!("exec sql failed: {e}");
-            AppError::NotFound
+            AppError::ExecSqlFailed(e.to_string())
         })?;
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::ProposalUri).eq(&row.uri))
@@ -256,7 +255,7 @@ pub async fn update_state(
         .await
         .map_err(|e| {
             debug!("update_state failed: {e}");
-            AppError::NotFound
+            AppError::ExecSqlFailed(e.to_string())
         })?;
 
     if lines == 0 {
@@ -322,7 +321,7 @@ pub async fn initiation_vote(
         .await
         .map_err(|e| {
             debug!("exec sql failed: {e}");
-            AppError::NotFound
+            AppError::ExecSqlFailed(e.to_string())
         })?;
 
     // check proposal owner

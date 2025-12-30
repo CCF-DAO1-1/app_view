@@ -54,6 +54,7 @@ use crate::{
         vote::update_vote_tx_hash,
         vote::status,
         vote::detail,
+        vote::list_self,
         timeline::get,
         task::get,
         task::send_funds,
