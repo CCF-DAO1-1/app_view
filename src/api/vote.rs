@@ -671,7 +671,9 @@ pub async fn list_self(
         views.push(view);
     }
 
-    let (sql, value) = Vote::build_select()
+    let (sql, value) = sea_query::Query::select()
+        .expr(Expr::col((Vote::Table, Vote::Id)).count_distinct())
+        .from(Vote::Table)
         .and_where(Expr::col(Vote::Voter).eq(query.did.clone()))
         .build_sqlx(PostgresQueryBuilder);
     let total: (i64,) = query_as_with(&sql, value.clone())

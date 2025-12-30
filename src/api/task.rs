@@ -130,7 +130,7 @@ pub async fn get(
     }
 
     let (sql, values) = sea_query::Query::select()
-        .expr(Expr::col((Task::Table, Task::Id)).count())
+        .expr(Expr::col((Task::Table, Task::Id)).count_distinct())
         .from(Task::Table)
         .and_where(Expr::col(Task::State).ne(TaskState::Completed as i32))
         .and_where(Expr::col(Task::Operators).is_null().or(Expr::cust(format!(

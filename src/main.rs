@@ -131,6 +131,8 @@ async fn main() -> Result<()> {
             "/api/proposal/receiver_addr",
             get(api::proposal::receiver_addr),
         )
+        .route("/api/proposal/list_self", get(api::proposal::list_self))
+        .route("/api/proposal/replied", get(api::proposal::replied))
         .route("/api/reply/list", post(api::reply::list))
         .route("/api/like/list", post(api::like::list))
         .route("/api/vote/bind_list", get(api::vote::bind_list))
