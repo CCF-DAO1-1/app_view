@@ -41,6 +41,7 @@ use crate::{
         proposal::initiation_vote,
         proposal::update_state,
         proposal::update_receiver_addr,
+        proposal::receiver_addr,
         reply::list,
         like::list,
         vote::bind_list,

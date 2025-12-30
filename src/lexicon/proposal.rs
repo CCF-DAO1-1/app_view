@@ -222,6 +222,7 @@ impl Proposal {
                 (Proposal::Table, Proposal::Record),
                 (Proposal::Table, Proposal::Progress),
                 (Proposal::Table, Proposal::State),
+                (Proposal::Table, Proposal::ReceiverAddr),
                 (Proposal::Table, Proposal::Updated),
             ])
             .from(Proposal::Table)
@@ -293,6 +294,7 @@ pub struct ProposalSample {
     pub record: Value,
     pub progress: i32,
     pub state: i32,
+    pub receiver_addr: Option<String>,
     pub updated: DateTime<Local>,
 }
 

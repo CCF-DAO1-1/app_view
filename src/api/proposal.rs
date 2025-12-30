@@ -41,6 +41,8 @@ pub struct ProposalQuery {
     pub limit: u64,
     /// search keyword
     pub q: Option<String>,
+    /// filter by state
+    pub state: Option<i32>,
     /// filter by user's DID
     pub repo: Option<String>,
     /// viewer's DID
@@ -50,11 +52,12 @@ pub struct ProposalQuery {
 impl Default for ProposalQuery {
     fn default() -> Self {
         Self {
-            cursor: Default::default(),
+            cursor: None,
             limit: 20,
-            q: Default::default(),
-            repo: Default::default(),
-            viewer: Default::default(),
+            q: None,
+            state: None,
+            repo: None,
+            viewer: None,
         }
     }
 }
@@ -72,6 +75,11 @@ pub async fn list(
         )
         .and_where_option(
             query
+                .state
+                .map(|state| Expr::col((Proposal::Table, Proposal::State)).eq(state)),
+        )
+        .and_where_option(
+            query
                 .cursor
                 .and_then(|cursor| cursor.parse::<i64>().ok())
                 .map(|cursor| {
@@ -80,6 +88,11 @@ pub async fn list(
                         Func::cust(ToTimestamp).args([Expr::val(cursor)]),
                     )
                 }),
+        )
+        .and_where_option(
+            query
+                .q
+                .map(|q| Expr::col((Proposal::Table, Proposal::Record)).like(format!("%{q}%"))),
         )
         .order_by(Proposal::Updated, Order::Desc)
         .limit(query.limit)
@@ -107,6 +120,61 @@ pub async fn list(
         })
     };
     Ok(ok(result))
+}
+
+#[derive(Debug, Validate, Deserialize, IntoParams)]
+#[serde(default)]
+pub struct PageQuery {
+    #[validate(range(min = 1))]
+    pub page: u64,
+    #[validate(range(min = 1))]
+    pub per_page: u64,
+}
+
+impl Default for PageQuery {
+    fn default() -> Self {
+        Self {
+            page: 1,
+            per_page: 20,
+        }
+    }
+}
+
+#[utoipa::path(get, path = "/api/proposal/receiver_addr", params(PageQuery))]
+pub async fn receiver_addr(
+    State(state): State<AppView>,
+    Query(query): Query<PageQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    query
+        .validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+    let offset = query.per_page * (query.page - 1);
+    let (sql, values) = Proposal::build_sample()
+        .and_where(Expr::col(Proposal::ReceiverAddr).is_not_null())
+        .order_by(Proposal::Updated, Order::Desc)
+        .limit(query.per_page)
+        .offset(offset)
+        .build_sqlx(PostgresQueryBuilder);
+    let rows: Vec<ProposalSample> = query_as_with(&sql, values)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| eyre!("exec sql failed: {e}"))?;
+
+    let (sql, values) = Proposal::build_sample()
+        .and_where(Expr::col(Proposal::ReceiverAddr).is_not_null())
+        .build_sqlx(PostgresQueryBuilder);
+
+    let total: (i64,) = query_as_with(&sql, values.clone())
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| eyre!("exec sql failed: {e}"))?;
+
+    Ok(ok(json!({
+        "rows": rows,
+        "page": query.page,
+        "per_page": query.per_page,
+        "total":  total.0
+    })))
 }
 
 #[derive(Debug, Default, Validate, Deserialize, IntoParams)]
