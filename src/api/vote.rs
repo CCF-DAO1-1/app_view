@@ -682,7 +682,7 @@ pub async fn list_self(
         .map_err(|e| eyre!("exec sql failed: {e}"))?;
 
     Ok(ok(json!({
-        "rows": rows,
+        "rows": views,
         "page": query.page,
         "per_page": query.per_page,
         "total":  total.0
