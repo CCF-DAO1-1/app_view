@@ -701,3 +701,112 @@ pub async fn submit_milestone_report(
         "outputsData": outputs_data
     })))
 }
+
+#[utoipa::path(
+    post,
+    path = "/api/task/submit_delay_report",
+    description = "提交延期报告"
+)]
+pub async fn submit_delay_report(
+    State(state): State<AppView>,
+    Json(body): Json<SignedBody<SubmitReportParams>>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Proposal::build_sample()
+        .and_where(Expr::col(Proposal::Uri).eq(body.params.proposal_uri.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let proposal_sample: ProposalSample = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("proposal not found: {e}")))?;
+
+    // create vote_meta
+    let proposal_hash = ckb_hash::blake2b_256(serde_json::to_vec(&proposal_sample.uri)?);
+
+    let (sql, value) = VoteMeta::build_select()
+        .and_where(Expr::col(VoteMeta::ProposalUri).eq(&proposal_sample.uri))
+        .and_where(Expr::col(VoteMeta::ProposalState).eq(ProposalState::MilestoneVote as i32))
+        .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Waiting as i32))
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_meta_row = if let Ok(vote_meta_row) = query_as_with::<_, VoteMetaRow, _>(&sql, value)
+        .fetch_one(&state.db)
+        .await
+    {
+        vote_meta_row
+    } else {
+        let (sql, value) = VoteWhitelist::build_select()
+            .order_by(VoteWhitelist::Created, Order::Desc)
+            .limit(1)
+            .build_sqlx(PostgresQueryBuilder);
+        let vote_whitelist_row: VoteWhitelistRow = query_as_with(&sql, value)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| {
+                debug!("fetch vote_whitelist failed: {e}");
+                AppError::ValidateFailed("vote whitelist not found".to_string())
+            })?;
+        // TODO
+        let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
+        let time_range = crate::ckb::test_get_vote_time_range(&state.ckb_client).await?;
+        let mut vote_meta_row = VoteMetaRow {
+            id: -1,
+            proposal_state: ProposalState::DelayVote as i32,
+            state: 0,
+            tx_hash: None,
+            proposal_uri: proposal_sample.uri.clone(),
+            whitelist_id: vote_whitelist_row.id,
+            candidates: vec![
+                "Abstain".to_string(),
+                "Agree".to_string(),
+                "Against".to_string(),
+            ],
+            start_time: time_range.0 as i64,
+            end_time: time_range.1 as i64,
+            creater: body.did.clone(),
+            results: None,
+            created: chrono::Local::now(),
+        };
+
+        vote_meta_row.id = VoteMeta::insert(&state.db, &vote_meta_row).await?;
+        vote_meta_row
+    };
+
+    let outputs_data = if vote_meta_row.tx_hash.is_none() {
+        let vote_meta = build_vote_meta(&state, &vote_meta_row, &proposal_hash).await?;
+
+        let vote_meta_bytes = vote_meta.as_bytes().to_vec();
+        let vote_meta_hex = hex::encode(vote_meta_bytes);
+
+        vec![vote_meta_hex]
+    } else {
+        vec![]
+    };
+
+    Task::complete(
+        &state.db,
+        &proposal_sample.uri,
+        TaskType::SubmitDelayReport,
+        &body.did,
+    )
+    .await
+    .ok();
+
+    Ok(ok(json!({
+        "vote_meta": vote_meta_row,
+        "outputsData": outputs_data
+    })))
+}

@@ -277,7 +277,9 @@ pub async fn check_vote_meta_finished(
                     .map_err(|e| error!("insert task failed: {e}"))
                     .ok();
                 }
-                ProposalState::DelayVote => todo!(),
+                ProposalState::DelayVote => {
+                    // TODO: do nothing for now
+                }
                 ProposalState::ReviewVote => todo!(),
                 ProposalState::ReexamineVote => todo!(),
                 ProposalState::RectificationVote => todo!(),

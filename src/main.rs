@@ -153,6 +153,10 @@ async fn main() -> Result<()> {
             post(api::task::submit_milestone_report),
         )
         .route(
+            "/api/task/submit_delay_report",
+            post(api::task::submit_delay_report),
+        )
+        .route(
             "/api/task/submit_meeting_report",
             post(api::task::submit_meeting_report),
         )

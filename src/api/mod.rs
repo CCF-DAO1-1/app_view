@@ -57,6 +57,7 @@ use crate::{
         task::get,
         task::send_funds,
         task::submit_milestone_report,
+        task::submit_delay_report,
         task::create_meeting,
         task::submit_meeting_report,
         meeting::get,
