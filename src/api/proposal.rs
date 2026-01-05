@@ -18,14 +18,14 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    api::{SignedBody, SignedParam, ToTimestamp, build_author, reply, vote::build_vote_meta},
+    api::{SignedBody, SignedParam, ToTimestamp, build_author, vote::build_vote_meta},
     ckb::get_vote_time_range,
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
         meeting::{Meeting, MeetingRow, MeetingState},
         proposal::{Proposal, ProposalRow, ProposalSample, ProposalState, ProposalView},
-        reply::{Reply, ReplyRow, ReplySampleRow},
+        reply::{Reply, ReplySampleRow},
         task::{Task, TaskRow, TaskState, TaskType},
         timeline::{Timeline, TimelineRow, TimelineType},
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteResult, VoteResults},
@@ -93,7 +93,7 @@ pub async fn list(
         .and_where_option(
             query
                 .q
-                .map(|q| Expr::col((Proposal::Table, Proposal::Record)).like(format!("%{q}%"))),
+                .map(|q| Expr::cust(format!("record #>> '{{data,title}}' like '%{q}%' or record #>> '{{data,goals}}' like '%{q}%' or record #>> '{{data,team}}' like '%{q}%'"))),
         )
         .order_by(Proposal::Updated, Order::Desc)
         .limit(query.limit)
