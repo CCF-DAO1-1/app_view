@@ -72,10 +72,7 @@ pub async fn check_vote_meta_finished(
         .unwrap_or_default();
     let bn: u64 = ckb_client.get_tip_block_number().await?.into();
     let current_epoch = ckb_client.get_current_epoch().await?;
-    debug!(
-        "check_vote_meta_finished at block number: {}, current_epoch: {:?}",
-        bn, current_epoch
-    );
+
     for VoteMetaRow {
         id,
         proposal_uri,
