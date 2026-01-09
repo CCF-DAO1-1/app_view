@@ -334,7 +334,48 @@ pub async fn check_vote_meta_finished(
                     Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
                 }
                 ProposalState::MilestoneVote | ProposalState::DelayVote => {
-                    error!("VoteResult::Against -> MilestoneVote | DelayVote not implemented yet");
+                    Proposal::update_state(
+                        &db,
+                        &proposal_uri,
+                        ProposalState::WaitingReexamine as i32,
+                    )
+                    .await?;
+
+                    let admins = Administrator::fetch_all(&db)
+                        .await
+                        .iter()
+                        .map(|admin| admin.did.clone())
+                        .collect();
+                    Task::insert(
+                        &db,
+                        &TaskRow {
+                            id: 0,
+                            task_type: TaskType::CreateReexamineMeeting as i32,
+                            message: "CreateReexamineMeeting".to_string(),
+                            target: proposal_uri.clone(),
+                            operators: admins,
+                            processor: None,
+                            deadline: chrono::Local::now() + chrono::Duration::days(2),
+                            state: TaskState::Unread as i32,
+                            updated: chrono::Local::now(),
+                            created: chrono::Local::now(),
+                        },
+                    )
+                    .await
+                    .map_err(|e| error!("insert task failed: {e}"))
+                    .ok();
+
+                    Task::complete(
+                        &db,
+                        &proposal_uri,
+                        TaskType::SubmitMilestoneReport,
+                        "SYSTEM",
+                    )
+                    .await
+                    .ok();
+                    Task::complete(&db, &proposal_uri, TaskType::SubmitDelayReport, "SYSTEM")
+                        .await
+                        .ok();
                 }
                 ProposalState::ReexamineVote => {
                     Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
@@ -349,7 +390,48 @@ pub async fn check_vote_meta_finished(
                     Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
                 }
                 ProposalState::MilestoneVote | ProposalState::DelayVote => {
-                    error!("VoteResult::Failed -> ProposalState::DelayVote not implemented yet");
+                    Proposal::update_state(
+                        &db,
+                        &proposal_uri,
+                        ProposalState::WaitingReexamine as i32,
+                    )
+                    .await?;
+
+                    let admins = Administrator::fetch_all(&db)
+                        .await
+                        .iter()
+                        .map(|admin| admin.did.clone())
+                        .collect();
+                    Task::insert(
+                        &db,
+                        &TaskRow {
+                            id: 0,
+                            task_type: TaskType::CreateReexamineMeeting as i32,
+                            message: "CreateReexamineMeeting".to_string(),
+                            target: proposal_uri.clone(),
+                            operators: admins,
+                            processor: None,
+                            deadline: chrono::Local::now() + chrono::Duration::days(2),
+                            state: TaskState::Unread as i32,
+                            updated: chrono::Local::now(),
+                            created: chrono::Local::now(),
+                        },
+                    )
+                    .await
+                    .map_err(|e| error!("insert task failed: {e}"))
+                    .ok();
+
+                    Task::complete(
+                        &db,
+                        &proposal_uri,
+                        TaskType::SubmitMilestoneReport,
+                        "SYSTEM",
+                    )
+                    .await
+                    .ok();
+                    Task::complete(&db, &proposal_uri, TaskType::SubmitDelayReport, "SYSTEM")
+                        .await
+                        .ok();
                 }
                 ProposalState::ReexamineVote => {
                     error!(

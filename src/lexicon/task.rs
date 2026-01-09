@@ -50,6 +50,9 @@ pub enum TaskType {
 
     /// 13 提交最终整改报告
     SubmitRectificationReport,
+
+    /// 14 提交复核投票报告
+    SubmitReexamineReport,
 }
 
 #[derive(Debug, Clone, Copy, Default, ToSchema)]

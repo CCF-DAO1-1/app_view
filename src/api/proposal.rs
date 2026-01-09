@@ -7,7 +7,6 @@ use common_x::restful::{
     },
     ok, ok_simple,
 };
-use molecule::prelude::Entity;
 use sea_query::{BinOper, Expr, ExprTrait, Func, Order, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::{Deserialize, Serialize};
@@ -18,8 +17,7 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    api::{SignedBody, SignedParam, ToTimestamp, build_author, vote::build_vote_meta},
-    ckb::get_vote_time_range,
+    api::{SignedBody, SignedParam, ToTimestamp, build_author, create_vote_tx},
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
@@ -29,7 +27,6 @@ use crate::{
         task::{Task, TaskRow, TaskState, TaskType},
         timeline::{Timeline, TimelineRow, TimelineType},
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteResult, VoteResults},
-        vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
 };
 
@@ -475,6 +472,7 @@ pub async fn initiation_vote(
     //  check AMA completed
     let (sql, values) = Meeting::build_select()
         .and_where(Expr::col(Meeting::ProposalUri).eq(&params.proposal_uri))
+        .and_where(Expr::col(Meeting::ProposalState).eq(ProposalState::Draft as i32))
         .and_where(Expr::col(Meeting::State).eq(MeetingState::Finished as i32))
         .build_sqlx(PostgresQueryBuilder);
     let _meeting_row: MeetingRow = query_as_with(&sql, values)
@@ -498,75 +496,19 @@ pub async fn initiation_vote(
     }
 
     // create vote_meta
-    let proposal_hash = ckb_hash::blake2b_256(serde_json::to_vec(&proposal_row.uri)?);
-
-    let (sql, value) = VoteMeta::build_select()
-        .and_where(Expr::col(VoteMeta::ProposalUri).eq(&proposal_row.uri))
-        .and_where(Expr::col(VoteMeta::ProposalState).eq(ProposalState::InitiationVote as i32))
-        .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Waiting as i32))
-        .build_sqlx(PostgresQueryBuilder);
-    let vote_meta_row = if let Ok(vote_meta_row) = query_as_with::<_, VoteMetaRow, _>(&sql, value)
-        .fetch_one(&state.db)
-        .await
-    {
-        vote_meta_row
-    } else {
-        let (sql, value) = VoteWhitelist::build_select()
-            .order_by(VoteWhitelist::Created, Order::Desc)
-            .limit(1)
-            .build_sqlx(PostgresQueryBuilder);
-        let vote_whitelist_row: VoteWhitelistRow = query_as_with(&sql, value)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e| {
-                debug!("fetch vote_whitelist failed: {e}");
-                AppError::ValidateFailed("vote whitelist not found".to_string())
-            })?;
-        // TODO
-        let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
-        let time_range = crate::ckb::test_get_vote_time_range(&state.ckb_client).await?;
-        let mut vote_meta_row = VoteMetaRow {
-            id: -1,
-            proposal_state: ProposalState::InitiationVote as i32,
-            state: 0,
-            tx_hash: None,
-            proposal_uri: params.proposal_uri.clone(),
-            whitelist_id: vote_whitelist_row.id,
-            candidates: vec![
-                "Abstain".to_string(),
-                "Agree".to_string(),
-                "Against".to_string(),
-            ],
-            start_time: time_range.0 as i64,
-            end_time: time_range.1 as i64,
-            creater: did.clone(),
-            results: None,
-            created: chrono::Local::now(),
-        };
-
-        vote_meta_row.id = VoteMeta::insert(&state.db, &vote_meta_row).await?;
-        vote_meta_row
-    };
-
-    let outputs_data = if vote_meta_row.tx_hash.is_none() {
-        let vote_meta = build_vote_meta(&state, &vote_meta_row, &proposal_hash).await?;
-
-        let vote_meta_bytes = vote_meta.as_bytes().to_vec();
-        let vote_meta_hex = hex::encode(vote_meta_bytes);
-
-        vec![vote_meta_hex]
-    } else {
-        vec![]
-    };
+    let vote_outputs_data = create_vote_tx(
+        &state,
+        &params.proposal_uri,
+        ProposalState::InitiationVote,
+        &did,
+    )
+    .await?;
 
     Task::complete(&state.db, &proposal_row.uri, TaskType::InitiationVote, &did)
         .await
         .ok();
 
-    Ok(ok(json!({
-        "vote_meta": vote_meta_row,
-        "outputsData": outputs_data
-    })))
+    Ok(ok(vote_outputs_data))
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]

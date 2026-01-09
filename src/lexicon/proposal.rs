@@ -41,10 +41,13 @@ pub enum ProposalState {
     /// 9 项目完成
     Completed,
 
-    /// 10 复核投票
+    /// 10 等待复核
+    WaitingReexamine,
+
+    /// 11 复核投票
     ReexamineVote,
 
-    /// 11 整改投票
+    /// 12 整改投票
     RectificationVote,
 }
 

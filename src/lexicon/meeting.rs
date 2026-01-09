@@ -6,6 +6,8 @@ use serde::Serialize;
 use sqlx::{Executor, Pool, Postgres, Row, query};
 use utoipa::ToSchema;
 
+use crate::lexicon::proposal::ProposalState;
+
 #[derive(Iden, Debug, Clone, Copy)]
 pub enum Meeting {
     Table,
@@ -17,6 +19,7 @@ pub enum Meeting {
     Url,
     Description,
     ProposalUri,
+    ProposalState,
     State,
     Report,
     Creater,
@@ -72,6 +75,12 @@ impl Meeting {
             )
             .col(ColumnDef::new(Self::ProposalUri).string().not_null())
             .col(
+                ColumnDef::new(Self::ProposalState)
+                    .integer()
+                    .not_null()
+                    .default(ProposalState::Draft as i32),
+            )
+            .col(
                 ColumnDef::new(Self::State)
                     .integer()
                     .not_null()
@@ -93,6 +102,17 @@ impl Meeting {
             )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
+
+        let sql = sea_query::Table::alter()
+            .table(Self::Table)
+            .add_column_if_not_exists(
+                ColumnDef::new(Self::ProposalState)
+                    .integer()
+                    .not_null()
+                    .default(ProposalState::Draft as i32),
+            )
+            .build(PostgresQueryBuilder);
+        db.execute(query(&sql)).await?;
         Ok(())
     }
 
@@ -107,6 +127,7 @@ impl Meeting {
                 Self::Url,
                 Self::Description,
                 Self::ProposalUri,
+                Self::ProposalState,
                 Self::State,
                 Self::Report,
                 Self::Creater,
@@ -121,6 +142,7 @@ impl Meeting {
                 row.url.clone().into(),
                 row.description.clone().into(),
                 row.proposal_uri.clone().into(),
+                row.proposal_state.into(),
                 row.state.into(),
                 row.report.clone().into(),
                 row.creater.clone().into(),
@@ -147,6 +169,7 @@ impl Meeting {
                 (Self::Table, Self::Url),
                 (Self::Table, Self::Description),
                 (Self::Table, Self::ProposalUri),
+                (Self::Table, Self::ProposalState),
                 (Self::Table, Self::State),
                 (Self::Table, Self::Report),
                 (Self::Table, Self::Creater),
@@ -183,6 +206,7 @@ pub struct MeetingRow {
     pub url: String,
     pub description: String,
     pub proposal_uri: String,
+    pub proposal_state: i32,
     pub state: i32,
     pub report: Option<String>,
     pub creater: String,

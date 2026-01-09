@@ -45,6 +45,10 @@ pub enum TimelineType {
     CreateAMA,
     /// 提交AMA报告
     SubmitAMAReport,
+    /// 组织复核会议
+    CreateReexamineMeeting,
+    /// 提交复核会议报告
+    SubmitReexamineReport,
 }
 
 #[derive(Iden, Debug, Clone, Copy)]

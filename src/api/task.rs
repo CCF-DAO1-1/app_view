@@ -10,7 +10,6 @@ use common_x::restful::{
     },
     ok, ok_simple,
 };
-use molecule::prelude::Entity;
 use sea_query::{Expr, ExprTrait, Order, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::{Deserialize, Serialize};
@@ -21,8 +20,7 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    api::{SignedBody, SignedParam, build_author, vote::build_vote_meta},
-    ckb::get_vote_time_range,
+    api::{SignedBody, SignedParam, build_author, create_vote_tx},
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
@@ -30,8 +28,6 @@ use crate::{
         proposal::{Proposal, ProposalRow, ProposalSample, ProposalState, has_next_milestone},
         task::{Task, TaskRow, TaskState, TaskType, TaskView},
         timeline::{Timeline, TimelineRow, TimelineType},
-        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
-        vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
 };
 
@@ -169,7 +165,7 @@ impl SignedParam for CreateMeetingParams {
     }
 }
 
-#[utoipa::path(post, path = "/api/task/create_meeting", description = "组织AMA会议")]
+#[utoipa::path(post, path = "/api/task/create_meeting", description = "组织会议")]
 pub async fn create_meeting(
     State(state): State<AppView>,
     Json(body): Json<SignedBody<CreateMeetingParams>>,
@@ -195,6 +191,14 @@ pub async fn create_meeting(
         .map(|admin| admin.did.clone())
         .collect::<Vec<_>>();
 
+    let (sql, value) = Proposal::build_sample()
+        .and_where(Expr::col(Proposal::Uri).eq(&body.params.proposal_uri))
+        .build_sqlx(PostgresQueryBuilder);
+    let proposal_row: ProposalSample = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("invalid proposal_uri: {e}")))?;
+
     let meeting_row = MeetingRow {
         id: 0,
         title: body.params.title.clone(),
@@ -206,6 +210,7 @@ pub async fn create_meeting(
         url: body.params.url.clone(),
         description: body.params.description.clone(),
         proposal_uri: body.params.proposal_uri.clone(),
+        proposal_state: proposal_row.state,
         state: 0,
         report: None,
         creater: body.did.clone(),
@@ -215,35 +220,80 @@ pub async fn create_meeting(
 
     Meeting::insert(&state.db, &meeting_row).await?;
 
-    Task::insert(
-        &state.db,
-        &TaskRow {
-            id: 0,
-            task_type: TaskType::SubmitAMAReport as i32,
-            message: "SubmitAMAReport".to_string(),
-            target: body.params.proposal_uri.clone(),
-            operators: admins,
-            processor: None,
-            deadline: chrono::Local::now() + chrono::Duration::days(7),
-            state: TaskState::Unread as i32,
-            updated: chrono::Local::now(),
-            created: chrono::Local::now(),
-        },
-    )
-    .await?;
+    match ProposalState::from(proposal_row.state) {
+        ProposalState::Draft => {
+            Task::insert(
+                &state.db,
+                &TaskRow {
+                    id: 0,
+                    task_type: TaskType::SubmitAMAReport as i32,
+                    message: "SubmitAMAReport".to_string(),
+                    target: body.params.proposal_uri.clone(),
+                    operators: admins.clone(),
+                    processor: None,
+                    deadline: chrono::Local::now() + chrono::Duration::days(7),
+                    state: TaskState::Unread as i32,
+                    updated: chrono::Local::now(),
+                    created: chrono::Local::now(),
+                },
+            )
+            .await?;
 
-    Timeline::insert(
-        &state.db,
-        &TimelineRow {
-            id: 0,
-            timeline_type: TimelineType::CreateAMA as i32,
-            message: format!("AMA meeting created by {}", body.did),
-            target: body.params.proposal_uri.clone(),
-            operator: body.did.clone(),
-            timestamp: chrono::Local::now(),
-        },
-    )
-    .await?;
+            Timeline::insert(
+                &state.db,
+                &TimelineRow {
+                    id: 0,
+                    timeline_type: TimelineType::CreateAMA as i32,
+                    message: format!("AMA meeting created by {}", body.did),
+                    target: body.params.proposal_uri.clone(),
+                    operator: body.did.clone(),
+                    timestamp: chrono::Local::now(),
+                },
+            )
+            .await?;
+        }
+        ProposalState::WaitingReexamine => {
+            Task::insert(
+                &state.db,
+                &TaskRow {
+                    id: 0,
+                    task_type: TaskType::SubmitReexamineReport as i32,
+                    message: "SubmitReexamineReport".to_string(),
+                    target: body.params.proposal_uri.clone(),
+                    operators: admins,
+                    processor: None,
+                    deadline: chrono::Local::now() + chrono::Duration::days(7),
+                    state: TaskState::Unread as i32,
+                    updated: chrono::Local::now(),
+                    created: chrono::Local::now(),
+                },
+            )
+            .await?;
+
+            Task::complete(
+                &state.db,
+                &body.params.proposal_uri,
+                TaskType::CreateReexamineMeeting,
+                &body.did,
+            )
+            .await
+            .ok();
+
+            Timeline::insert(
+                &state.db,
+                &TimelineRow {
+                    id: 0,
+                    timeline_type: TimelineType::CreateReexamineMeeting as i32,
+                    message: format!("Reexamine meeting created by {}", body.did),
+                    target: body.params.proposal_uri.clone(),
+                    operator: body.did.clone(),
+                    timestamp: chrono::Local::now(),
+                },
+            )
+            .await?;
+        }
+        _ => {}
+    }
 
     Ok(ok_simple())
 }
@@ -266,7 +316,7 @@ impl SignedParam for SubmitMeetingReportParams {
 #[utoipa::path(
     post,
     path = "/api/task/submit_meeting_report",
-    description = "提交AMA会议报告"
+    description = "提交会议报告"
 )]
 pub async fn submit_meeting_report(
     State(state): State<AppView>,
@@ -301,22 +351,60 @@ pub async fn submit_meeting_report(
         ));
     }
 
+    let (sql, value) = Proposal::build_sample()
+        .and_where(Expr::col(Proposal::Uri).eq(&body.params.proposal_uri))
+        .build_sqlx(PostgresQueryBuilder);
+    let proposal_sample: ProposalSample = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("invalid proposal_uri: {e}")))?;
+
     Meeting::update_report(&state.db, body.params.meeting_id, &body.params.report).await?;
 
-    Timeline::insert(
-        &state.db,
-        &TimelineRow {
-            id: 0,
-            timeline_type: TimelineType::SubmitAMAReport as i32,
-            message: body.params.report.clone(),
-            target: body.params.proposal_uri.clone(),
-            operator: body.did.clone(),
-            timestamp: chrono::Local::now(),
-        },
-    )
-    .await?;
+    match ProposalState::from(proposal_sample.state) {
+        ProposalState::Draft => {
+            Timeline::insert(
+                &state.db,
+                &TimelineRow {
+                    id: 0,
+                    timeline_type: TimelineType::SubmitAMAReport as i32,
+                    message: body.params.report.clone(),
+                    target: body.params.proposal_uri.clone(),
+                    operator: body.did.clone(),
+                    timestamp: chrono::Local::now(),
+                },
+            )
+            .await?;
+        }
+        ProposalState::WaitingReexamine => {
+            Timeline::insert(
+                &state.db,
+                &TimelineRow {
+                    id: 0,
+                    timeline_type: TimelineType::SubmitAMAReport as i32,
+                    message: body.params.report.clone(),
+                    target: body.params.proposal_uri.clone(),
+                    operator: body.did.clone(),
+                    timestamp: chrono::Local::now(),
+                },
+            )
+            .await?;
 
-    Ok(ok_simple())
+            // create vote_meta
+            let vote_outputs_data = create_vote_tx(
+                &state,
+                &body.params.proposal_uri,
+                ProposalState::ReexamineVote,
+                &body.did,
+            )
+            .await?;
+
+            return Ok(ok(vote_outputs_data));
+        }
+        _ => {}
+    }
+
+    Ok(ok(json!({})))
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
@@ -583,6 +671,7 @@ pub async fn send_funds(
         }
         ProposalState::WaitingForAcceptanceReport => {}
         ProposalState::Completed => {}
+        ProposalState::WaitingReexamine => {}
         ProposalState::ReexamineVote => {}
         ProposalState::RectificationVote => {}
     }
@@ -639,66 +728,13 @@ pub async fn submit_milestone_report(
         .map_err(|e| AppError::ValidateFailed(format!("proposal not found: {e}")))?;
 
     // create vote_meta
-    let proposal_hash = ckb_hash::blake2b_256(serde_json::to_vec(&proposal_sample.uri)?);
-
-    let (sql, value) = VoteMeta::build_select()
-        .and_where(Expr::col(VoteMeta::ProposalUri).eq(&proposal_sample.uri))
-        .and_where(Expr::col(VoteMeta::ProposalState).eq(ProposalState::MilestoneVote as i32))
-        .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Waiting as i32))
-        .build_sqlx(PostgresQueryBuilder);
-    let vote_meta_row = if let Ok(vote_meta_row) = query_as_with::<_, VoteMetaRow, _>(&sql, value)
-        .fetch_one(&state.db)
-        .await
-    {
-        vote_meta_row
-    } else {
-        let (sql, value) = VoteWhitelist::build_select()
-            .order_by(VoteWhitelist::Created, Order::Desc)
-            .limit(1)
-            .build_sqlx(PostgresQueryBuilder);
-        let vote_whitelist_row: VoteWhitelistRow = query_as_with(&sql, value)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e| {
-                debug!("fetch vote_whitelist failed: {e}");
-                AppError::ValidateFailed("vote whitelist not found".to_string())
-            })?;
-        // TODO
-        let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
-        let time_range = crate::ckb::test_get_vote_time_range(&state.ckb_client).await?;
-        let mut vote_meta_row = VoteMetaRow {
-            id: -1,
-            proposal_state: ProposalState::MilestoneVote as i32,
-            state: 0,
-            tx_hash: None,
-            proposal_uri: proposal_sample.uri.clone(),
-            whitelist_id: vote_whitelist_row.id,
-            candidates: vec![
-                "Abstain".to_string(),
-                "Agree".to_string(),
-                "Against".to_string(),
-            ],
-            start_time: time_range.0 as i64,
-            end_time: time_range.1 as i64,
-            creater: body.did.clone(),
-            results: None,
-            created: chrono::Local::now(),
-        };
-
-        vote_meta_row.id = VoteMeta::insert(&state.db, &vote_meta_row).await?;
-        vote_meta_row
-    };
-
-    let outputs_data = if vote_meta_row.tx_hash.is_none() {
-        let vote_meta = build_vote_meta(&state, &vote_meta_row, &proposal_hash).await?;
-
-        let vote_meta_bytes = vote_meta.as_bytes().to_vec();
-        let vote_meta_hex = hex::encode(vote_meta_bytes);
-
-        vec![vote_meta_hex]
-    } else {
-        vec![]
-    };
+    let vote_outputs_data = create_vote_tx(
+        &state,
+        &body.params.proposal_uri,
+        ProposalState::MilestoneVote,
+        &body.did,
+    )
+    .await?;
 
     Task::complete(
         &state.db,
@@ -718,10 +754,7 @@ pub async fn submit_milestone_report(
     .await
     .ok();
 
-    Ok(ok(json!({
-        "vote_meta": vote_meta_row,
-        "outputsData": outputs_data
-    })))
+    Ok(ok(vote_outputs_data))
 }
 
 #[utoipa::path(
@@ -757,66 +790,13 @@ pub async fn submit_delay_report(
         .map_err(|e| AppError::ValidateFailed(format!("proposal not found: {e}")))?;
 
     // create vote_meta
-    let proposal_hash = ckb_hash::blake2b_256(serde_json::to_vec(&proposal_sample.uri)?);
-
-    let (sql, value) = VoteMeta::build_select()
-        .and_where(Expr::col(VoteMeta::ProposalUri).eq(&proposal_sample.uri))
-        .and_where(Expr::col(VoteMeta::ProposalState).eq(ProposalState::MilestoneVote as i32))
-        .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Waiting as i32))
-        .build_sqlx(PostgresQueryBuilder);
-    let vote_meta_row = if let Ok(vote_meta_row) = query_as_with::<_, VoteMetaRow, _>(&sql, value)
-        .fetch_one(&state.db)
-        .await
-    {
-        vote_meta_row
-    } else {
-        let (sql, value) = VoteWhitelist::build_select()
-            .order_by(VoteWhitelist::Created, Order::Desc)
-            .limit(1)
-            .build_sqlx(PostgresQueryBuilder);
-        let vote_whitelist_row: VoteWhitelistRow = query_as_with(&sql, value)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e| {
-                debug!("fetch vote_whitelist failed: {e}");
-                AppError::ValidateFailed("vote whitelist not found".to_string())
-            })?;
-        // TODO
-        let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
-        let time_range = crate::ckb::test_get_vote_time_range(&state.ckb_client).await?;
-        let mut vote_meta_row = VoteMetaRow {
-            id: -1,
-            proposal_state: ProposalState::DelayVote as i32,
-            state: 0,
-            tx_hash: None,
-            proposal_uri: proposal_sample.uri.clone(),
-            whitelist_id: vote_whitelist_row.id,
-            candidates: vec![
-                "Abstain".to_string(),
-                "Agree".to_string(),
-                "Against".to_string(),
-            ],
-            start_time: time_range.0 as i64,
-            end_time: time_range.1 as i64,
-            creater: body.did.clone(),
-            results: None,
-            created: chrono::Local::now(),
-        };
-
-        vote_meta_row.id = VoteMeta::insert(&state.db, &vote_meta_row).await?;
-        vote_meta_row
-    };
-
-    let outputs_data = if vote_meta_row.tx_hash.is_none() {
-        let vote_meta = build_vote_meta(&state, &vote_meta_row, &proposal_hash).await?;
-
-        let vote_meta_bytes = vote_meta.as_bytes().to_vec();
-        let vote_meta_hex = hex::encode(vote_meta_bytes);
-
-        vec![vote_meta_hex]
-    } else {
-        vec![]
-    };
+    let vote_outputs_data = create_vote_tx(
+        &state,
+        &body.params.proposal_uri,
+        ProposalState::DelayVote,
+        &body.did,
+    )
+    .await?;
 
     Task::complete(
         &state.db,
@@ -836,10 +816,7 @@ pub async fn submit_delay_report(
     .await
     .ok();
 
-    Ok(ok(json!({
-        "vote_meta": vote_meta_row,
-        "outputsData": outputs_data
-    })))
+    Ok(ok(vote_outputs_data))
 }
 
 #[utoipa::path(

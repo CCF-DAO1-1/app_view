@@ -10,7 +10,8 @@ pub mod vote;
 
 use color_eyre::eyre::{OptionExt, eyre};
 use k256::ecdsa::{Signature, VerifyingKey, signature::Verifier};
-use sea_query::{Expr, ExprTrait, PostgresQueryBuilder};
+use molecule::prelude::Entity;
+use sea_query::{Expr, ExprTrait, Order, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -23,9 +24,13 @@ use validator::Validate;
 use crate::{
     AppView,
     atproto::{NSID_PROFILE, get_record},
+    ckb::get_vote_time_range,
     lexicon::{
         self,
         profile::{Profile, ProfileRow},
+        proposal::ProposalState,
+        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
+        vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
 };
 
@@ -207,4 +212,77 @@ impl<T: SignedParam> SignedBody<T> {
             .verify(&unsigned_bytes, &signature)
             .map_err(|e| eyre!("verify signature failed: {e}"))
     }
+}
+
+pub async fn create_vote_tx(
+    state: &AppView,
+    proposal_uri: &str,
+    proposal_state: ProposalState,
+    creator: &str,
+) -> color_eyre::Result<Value> {
+    let proposal_hash = ckb_hash::blake2b_256(serde_json::to_vec(proposal_uri)?);
+
+    let (sql, value) = VoteMeta::build_select()
+        .and_where(Expr::col(VoteMeta::ProposalUri).eq(proposal_uri))
+        .and_where(Expr::col(VoteMeta::ProposalState).eq(proposal_state as i32))
+        .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Waiting as i32))
+        .build_sqlx(PostgresQueryBuilder);
+    let vote_meta_row = if let Ok(vote_meta_row) =
+        sqlx::query_as_with::<_, VoteMetaRow, _>(&sql, value)
+            .fetch_one(&state.db)
+            .await
+    {
+        vote_meta_row
+    } else {
+        let (sql, value) = VoteWhitelist::build_select()
+            .order_by(VoteWhitelist::Created, Order::Desc)
+            .limit(1)
+            .build_sqlx(PostgresQueryBuilder);
+        let vote_whitelist_row: VoteWhitelistRow = sqlx::query_as_with(&sql, value)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| {
+                debug!("fetch vote_whitelist failed: {e}");
+                eyre!("vote whitelist not found".to_string())
+            })?;
+        // TODO
+        let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
+        let time_range = crate::ckb::test_get_vote_time_range(&state.ckb_client).await?;
+        let mut vote_meta_row = VoteMetaRow {
+            id: -1,
+            proposal_state: proposal_state as i32,
+            state: 0,
+            tx_hash: None,
+            proposal_uri: proposal_uri.to_string(),
+            whitelist_id: vote_whitelist_row.id,
+            candidates: vec![
+                "Abstain".to_string(),
+                "Agree".to_string(),
+                "Against".to_string(),
+            ],
+            start_time: time_range.0 as i64,
+            end_time: time_range.1 as i64,
+            creater: creator.to_string(),
+            results: None,
+            created: chrono::Local::now(),
+        };
+
+        vote_meta_row.id = VoteMeta::insert(&state.db, &vote_meta_row).await?;
+        vote_meta_row
+    };
+
+    let outputs_data = if vote_meta_row.tx_hash.is_none() {
+        let vote_meta = vote::build_vote_meta(state, &vote_meta_row, &proposal_hash).await?;
+
+        let vote_meta_bytes = vote_meta.as_bytes().to_vec();
+        let vote_meta_hex = hex::encode(vote_meta_bytes);
+
+        vec![vote_meta_hex]
+    } else {
+        vec![]
+    };
+    Ok(json!({
+        "vote_meta": vote_meta_row,
+        "outputsData": outputs_data
+    }))
 }

@@ -258,9 +258,8 @@ pub async fn create_vote_meta(
     {
         vote_meta_row
     } else {
-        // TODO: 7 days
+        //  7 days
         let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
-        let time_range = crate::ckb::test_get_vote_time_range(&state.ckb_client).await?;
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             proposal_state: proposal_sample.state,
