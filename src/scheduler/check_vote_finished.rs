@@ -278,15 +278,92 @@ pub async fn check_vote_meta_finished(
                     .ok();
                 }
                 ProposalState::DelayVote => {
-                    // TODO: do nothing for now
+                    Proposal::update_state(&db, &proposal_uri, ProposalState::InProgress as i32)
+                        .await?;
+                    let admins: Vec<String> = Administrator::fetch_all(&db)
+                        .await
+                        .iter()
+                        .map(|admin| admin.did.clone())
+                        .collect();
+                    Task::insert(
+                        &db,
+                        &TaskRow {
+                            id: 0,
+                            task_type: TaskType::SubmitMilestoneReport as i32,
+                            message: proposal_sample.progress.to_string(),
+                            target: proposal_uri.clone(),
+                            operators: admins.clone(),
+                            processor: None,
+                            deadline: chrono::Local::now() + chrono::Duration::days(7),
+                            state: TaskState::Unread as i32,
+                            updated: chrono::Local::now(),
+                            created: chrono::Local::now(),
+                        },
+                    )
+                    .await
+                    .map_err(|e| error!("insert task failed: {e}"))
+                    .ok();
+                    Task::insert(
+                        &db,
+                        &TaskRow {
+                            id: 0,
+                            task_type: TaskType::SubmitDelayReport as i32,
+                            message: proposal_sample.progress.to_string(),
+                            target: proposal_uri.clone(),
+                            operators: admins,
+                            processor: None,
+                            deadline: chrono::Local::now() + chrono::Duration::days(7),
+                            state: TaskState::Unread as i32,
+                            updated: chrono::Local::now(),
+                            created: chrono::Local::now(),
+                        },
+                    )
+                    .await
+                    .map_err(|e| error!("insert task failed: {e}"))
+                    .ok();
                 }
-                ProposalState::ReviewVote => todo!(),
-                ProposalState::ReexamineVote => todo!(),
-                ProposalState::RectificationVote => todo!(),
+                ProposalState::ReexamineVote => {
+                    error!("VoteResult::Agree -> ProposalState::ReexamineVote not implemented yet");
+                }
+                ProposalState::RectificationVote => {
+                    error!(
+                        "VoteResult::Agree -> ProposalState::RectificationVote not implemented yet"
+                    );
+                }
                 _ => {}
             },
-            VoteResult::Against => {}
-            VoteResult::Failed => {}
+            VoteResult::Against => match ProposalState::from(proposal_state) {
+                ProposalState::InitiationVote => {
+                    Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
+                }
+                ProposalState::MilestoneVote | ProposalState::DelayVote => {
+                    error!("VoteResult::Against -> MilestoneVote | DelayVote not implemented yet");
+                }
+                ProposalState::ReexamineVote => {
+                    Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
+                }
+                ProposalState::RectificationVote => {
+                    Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
+                }
+                _ => {}
+            },
+            VoteResult::Failed => match ProposalState::from(proposal_state) {
+                ProposalState::InitiationVote => {
+                    Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
+                }
+                ProposalState::MilestoneVote | ProposalState::DelayVote => {
+                    error!("VoteResult::Failed -> ProposalState::DelayVote not implemented yet");
+                }
+                ProposalState::ReexamineVote => {
+                    error!(
+                        "VoteResult::Failed -> ProposalState::ReexamineVote not implemented yet"
+                    );
+                }
+                ProposalState::RectificationVote => {
+                    Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
+                }
+                _ => {}
+            },
         }
 
         Timeline::insert(

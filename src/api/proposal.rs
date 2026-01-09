@@ -753,7 +753,7 @@ pub fn calculate_vote_result(
                 }
             }
         }
-        ProposalState::MilestoneVote | ProposalState::DelayVote | ProposalState::ReviewVote => {
+        ProposalState::MilestoneVote | ProposalState::DelayVote => {
             if proposal_type == "BudgetProposal" {
                 if results.valid_weight_sum >= 6200_0000_0000_0000 {
                     let against =

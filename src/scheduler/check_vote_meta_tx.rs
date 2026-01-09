@@ -110,7 +110,6 @@ pub async fn check_vote_meta_tx(
                                 ProposalState::InitiationVote => TimelineType::InitiationVote,
                                 ProposalState::MilestoneVote => TimelineType::MilestoneVote,
                                 ProposalState::DelayVote => TimelineType::DelayVote,
-                                ProposalState::ReviewVote => TimelineType::ReviewVote,
                                 ProposalState::ReexamineVote => TimelineType::ReexamineVote,
                                 ProposalState::RectificationVote => TimelineType::RectificationVote,
                                 _ => continue,

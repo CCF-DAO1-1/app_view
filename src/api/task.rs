@@ -581,7 +581,6 @@ pub async fn send_funds(
             .await
             .ok();
         }
-        ProposalState::ReviewVote => {}
         ProposalState::WaitingForAcceptanceReport => {}
         ProposalState::Completed => {}
         ProposalState::ReexamineVote => {}
@@ -710,6 +709,15 @@ pub async fn submit_milestone_report(
     .await
     .ok();
 
+    Task::complete(
+        &state.db,
+        &proposal_sample.uri,
+        TaskType::SubmitDelayReport,
+        &body.did,
+    )
+    .await
+    .ok();
+
     Ok(ok(json!({
         "vote_meta": vote_meta_row,
         "outputsData": outputs_data
@@ -814,6 +822,15 @@ pub async fn submit_delay_report(
         &state.db,
         &proposal_sample.uri,
         TaskType::SubmitDelayReport,
+        &body.did,
+    )
+    .await
+    .ok();
+
+    Task::complete(
+        &state.db,
+        &proposal_sample.uri,
+        TaskType::SubmitMilestoneReport,
         &body.did,
     )
     .await

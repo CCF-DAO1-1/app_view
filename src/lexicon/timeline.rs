@@ -33,8 +33,6 @@ pub enum TimelineType {
     DelayVote,
     /// 发送里程碑资金
     SendMilestoneFund,
-    /// 发起进度复核投票
-    ReviewVote,
     /// 发起复核投票
     ReexamineVote,
     /// 发起验收投票

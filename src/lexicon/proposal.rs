@@ -35,19 +35,16 @@ pub enum ProposalState {
     /// 7 等待启动金
     WaitingForMilestoneFund,
 
-    /// 8 进度复核投票
-    ReviewVote,
-
-    /// 9 等待验收报告
+    /// 8 等待验收报告
     WaitingForAcceptanceReport,
 
-    /// 10 项目完成
+    /// 9 项目完成
     Completed,
 
-    /// 11 复核投票
+    /// 10 复核投票
     ReexamineVote,
 
-    /// 12 整改投票
+    /// 11 整改投票
     RectificationVote,
 }
 
@@ -62,11 +59,10 @@ impl ProposalState {
             5 => ProposalState::MilestoneVote,
             6 => ProposalState::DelayVote,
             7 => ProposalState::WaitingForMilestoneFund,
-            8 => ProposalState::ReviewVote,
-            9 => ProposalState::WaitingForAcceptanceReport,
-            10 => ProposalState::Completed,
-            11 => ProposalState::ReexamineVote,
-            12 => ProposalState::RectificationVote,
+            8 => ProposalState::WaitingForAcceptanceReport,
+            9 => ProposalState::Completed,
+            10 => ProposalState::ReexamineVote,
+            11 => ProposalState::RectificationVote,
             _ => ProposalState::Draft,
         }
     }
