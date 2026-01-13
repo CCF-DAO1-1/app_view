@@ -100,7 +100,7 @@ pub async fn check_vote_meta_finished(
             continue;
         }
 
-        // TODO: get votes by vote_indexer
+        // get votes by vote_indexer
         let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
             tx_hash: ckb_types::H256(
                 hex::decode(tx_hash.unwrap().trim_start_matches("0x"))

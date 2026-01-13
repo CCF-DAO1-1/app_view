@@ -324,7 +324,6 @@ pub async fn get_vote_time_range(
 }
 
 // TODO: for test only, remove it later
-
 pub async fn test_get_vote_time_range(ckb_client: &CkbRpcAsyncClient) -> Result<(u64, u64)> {
     let current_epoch = ckb_client.get_current_epoch().await?;
     let bn = ckb_client.get_tip_block_number().await?;
@@ -335,7 +334,7 @@ pub async fn test_get_vote_time_range(ckb_client: &CkbRpcAsyncClient) -> Result<
         current_epoch.length.into(),
     );
 
-    let index = Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number) + 20;
+    let index = Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number) + 100;
     let add = if index >= current_epoch.length.into() {
         (1, index - Into::<u64>::into(current_epoch.length))
     } else {
