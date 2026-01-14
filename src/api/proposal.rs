@@ -341,13 +341,19 @@ pub async fn detail(
         })?;
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::ProposalUri).eq(&row.uri))
-        .and_where(Expr::col(VoteMeta::ProposalState).eq(row.state))
+        .and_where_option(if row.state != ProposalState::End as i32 {
+            Some(Expr::col(VoteMeta::ProposalState).eq(row.state))
+        } else {
+            None
+        })
         .and_where(
             Expr::col(VoteMeta::State)
                 .eq(VoteMetaState::Waiting as i32)
                 .or(Expr::col(VoteMeta::State).eq(VoteMetaState::Committed as i32))
                 .or(Expr::col(VoteMeta::State).eq(VoteMetaState::Finished as i32)),
         )
+        .order_by(VoteMeta::Created, Order::Desc)
+        .limit(1)
         .build_sqlx(PostgresQueryBuilder);
     let vote_meta_row: Option<VoteMetaRow> = query_as_with::<_, VoteMetaRow, _>(&sql, value)
         .fetch_one(&state.db)
@@ -557,9 +563,9 @@ pub async fn update_receiver_addr(
         .await
         .map_err(|e| AppError::ValidateFailed(format!("proposal not found: {e}")))?;
 
-    if proposal_sample.state != (ProposalState::InitiationVote as i32) {
+    if proposal_sample.state != (ProposalState::WaitingForStartFund as i32) {
         return Err(AppError::ValidateFailed(
-            "only InitiationVote state can update receiver addr".to_string(),
+            "only WaitingForStartFund state can update receiver addr".to_string(),
         ));
     }
 
@@ -670,10 +676,10 @@ pub fn calculate_vote_result(
                     if agree >= 0.67 {
                         return VoteResult::Agree;
                     } else {
-                        return VoteResult::Against;
+                        return VoteResult::Against("agree rate not enough(67%)".to_string());
                     }
                 } else {
-                    return VoteResult::Failed;
+                    return VoteResult::Failed("valid_weight_sum not enough(1.85T)".to_string());
                 }
             } else if let Some(proposal_budget) = proposal
                 .record
@@ -688,10 +694,12 @@ pub fn calculate_vote_result(
                     if agree >= 0.51 {
                         return VoteResult::Agree;
                     } else {
-                        return VoteResult::Against;
+                        return VoteResult::Against("agree rate not enough(51%)".to_string());
                     }
                 } else {
-                    return VoteResult::Failed;
+                    return VoteResult::Failed(
+                        "valid_weight_sum not enough(3x budget)".to_string(),
+                    );
                 }
             }
         }
@@ -701,7 +709,7 @@ pub fn calculate_vote_result(
                     let against =
                         results.candidate_votes[2] as f64 / results.valid_weight_sum as f64;
                     if against > 0.67 {
-                        return VoteResult::Against;
+                        return VoteResult::Against("against rate too high(67%)".to_string());
                     } else {
                         return VoteResult::Agree;
                     }
@@ -718,7 +726,7 @@ pub fn calculate_vote_result(
                     let against =
                         results.candidate_votes[2] as f64 / results.valid_weight_sum as f64;
                     if against > 0.51 {
-                        return VoteResult::Against;
+                        return VoteResult::Against("against rate too high(51%)".to_string());
                     } else {
                         return VoteResult::Agree;
                     }
@@ -734,10 +742,10 @@ pub fn calculate_vote_result(
                     if agree >= 0.67 {
                         return VoteResult::Agree;
                     } else {
-                        return VoteResult::Against;
+                        return VoteResult::Against("agree rate not enough(67%)".to_string());
                     }
                 } else {
-                    return VoteResult::Against;
+                    return VoteResult::Against("valid_weight_sum not enough(1.85T)".to_string());
                 }
             } else if let Some(proposal_budget) = proposal
                 .record
@@ -750,14 +758,16 @@ pub fn calculate_vote_result(
                     if agree >= 0.51 {
                         return VoteResult::Agree;
                     } else {
-                        return VoteResult::Against;
+                        return VoteResult::Against("agree rate not enough(51%)".to_string());
                     }
                 } else {
-                    return VoteResult::Against;
+                    return VoteResult::Against(
+                        "valid_weight_sum not enough(3x budget)".to_string(),
+                    );
                 }
             }
         }
         _ => (),
     }
-    VoteResult::Failed
+    VoteResult::Failed("unknown".to_string())
 }

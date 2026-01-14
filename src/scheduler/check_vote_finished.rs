@@ -160,17 +160,15 @@ pub async fn check_vote_meta_finished(
             }
         }
 
-        let vote_results = VoteResults {
+        let mut vote_results = VoteResults {
             vote_sum: vote_sum as u64,
             valid_vote_sum: valid_vote_sum as u64,
             weight_sum,
             valid_weight_sum,
             valid_votes,
             candidate_votes,
+            result: None,
         };
-        debug!("vote_result: {:?}", vote_results);
-        // update vote_meta state
-        VoteMeta::update_results(&db, id, json!(vote_results)).await?;
 
         let (sql, value) = Proposal::build_sample()
             .and_where(Expr::col(Proposal::Uri).eq(proposal_uri.clone()))
@@ -188,6 +186,10 @@ pub async fn check_vote_meta_finished(
             vote_results.clone(),
             proposal_type,
         );
+        vote_results.result = Some(vote_result.clone());
+        debug!("vote_result: {:?}", vote_results);
+        // update vote_meta state
+        VoteMeta::update_results(&db, id, json!(vote_results)).await?;
 
         debug!(
             "vote_meta id: {} finished with result: {:?}",
@@ -329,9 +331,15 @@ pub async fn check_vote_meta_finished(
                 }
                 _ => {}
             },
-            VoteResult::Against => match ProposalState::from(proposal_state) {
+            VoteResult::Against(_reason) => match ProposalState::from(proposal_state) {
                 ProposalState::InitiationVote => {
                     Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
+                    Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
+                        .await
+                        .ok();
+                    Task::complete(&db, &proposal_uri, TaskType::SubmitAMAReport, "SYSTEM")
+                        .await
+                        .ok();
                 }
                 ProposalState::MilestoneVote | ProposalState::DelayVote => {
                     Proposal::update_state(
@@ -385,9 +393,15 @@ pub async fn check_vote_meta_finished(
                 }
                 _ => {}
             },
-            VoteResult::Failed => match ProposalState::from(proposal_state) {
+            VoteResult::Failed(_reason) => match ProposalState::from(proposal_state) {
                 ProposalState::InitiationVote => {
                     Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
+                    Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
+                        .await
+                        .ok();
+                    Task::complete(&db, &proposal_uri, TaskType::SubmitAMAReport, "SYSTEM")
+                        .await
+                        .ok();
                 }
                 ProposalState::MilestoneVote | ProposalState::DelayVote => {
                     Proposal::update_state(

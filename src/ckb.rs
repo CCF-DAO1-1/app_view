@@ -334,7 +334,7 @@ pub async fn test_get_vote_time_range(ckb_client: &CkbRpcAsyncClient) -> Result<
         current_epoch.length.into(),
     );
 
-    let index = Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number) + 100;
+    let index = Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number) + 50;
     let add = if index >= current_epoch.length.into() {
         (1, index - Into::<u64>::into(current_epoch.length))
     } else {

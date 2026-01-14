@@ -192,12 +192,13 @@ pub struct VoteResults {
     pub valid_weight_sum: u64,
     pub valid_votes: Vec<Vec<(String, u64)>>,
     pub candidate_votes: Vec<u64>,
+    pub result: Option<VoteResult>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub enum VoteResult {
     Voting,
     Agree,
-    Against,
-    Failed,
+    Against(String),
+    Failed(String),
 }
