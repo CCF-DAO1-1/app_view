@@ -49,6 +49,9 @@ pub enum ProposalState {
 
     /// 12 整改投票
     RectificationVote,
+
+    /// 13 等待整改
+    WaitingRectification,
 }
 
 impl ProposalState {
@@ -64,8 +67,10 @@ impl ProposalState {
             7 => ProposalState::WaitingForMilestoneFund,
             8 => ProposalState::WaitingForAcceptanceReport,
             9 => ProposalState::Completed,
-            10 => ProposalState::ReexamineVote,
-            11 => ProposalState::RectificationVote,
+            10 => ProposalState::WaitingReexamine,
+            11 => ProposalState::ReexamineVote,
+            12 => ProposalState::RectificationVote,
+            13 => ProposalState::WaitingRectification,
             _ => ProposalState::Draft,
         }
     }

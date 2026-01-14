@@ -48,10 +48,10 @@ pub enum TaskType {
     /// 12 发起最终整改投票
     RectificationVote,
 
-    /// 13 提交最终整改报告
-    SubmitRectificationReport,
+    /// 13 整改
+    Rectification,
 
-    /// 14 提交复核投票报告
+    /// 14 提交复核会议报告
     SubmitReexamineReport,
 }
 

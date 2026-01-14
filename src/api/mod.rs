@@ -70,6 +70,8 @@ use crate::{
         task::create_meeting,
         task::submit_meeting_report,
         task::submit_acceptance_report,
+        task::rectification_vote,
+        task::rectification,
         meeting::get,
     ),
     components(schemas(
@@ -87,6 +89,8 @@ use crate::{
         SignedBody<task::SubmitReportParams>,
         SignedBody<task::CreateMeetingParams>,
         SignedBody<task::SubmitMeetingReportParams>,
+        SignedBody<task::RectificationVoteParams>,
+        SignedBody<task::RectificationParams>,
 
         // lexicon
         lexicon::proposal::ProposalState,

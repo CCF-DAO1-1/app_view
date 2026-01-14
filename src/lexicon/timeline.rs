@@ -49,6 +49,8 @@ pub enum TimelineType {
     CreateReexamineMeeting,
     /// 提交复核会议报告
     SubmitReexamineReport,
+    /// 项目整改
+    Rectification,
 }
 
 #[derive(Iden, Debug, Clone, Copy)]

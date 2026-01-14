@@ -13,7 +13,7 @@ use common_x::restful::{
 use sea_query::{Expr, ExprTrait, Order, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use sqlx::query_as_with;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
@@ -457,9 +457,6 @@ pub async fn send_funds(
         .collect::<Vec<_>>();
 
     match ProposalState::from(proposal_sample.state) {
-        ProposalState::End => {}
-        ProposalState::Draft => {}
-        ProposalState::InitiationVote => {}
         ProposalState::WaitingForStartFund => {
             let milestone = proposal_sample
                 .record
@@ -565,9 +562,6 @@ pub async fn send_funds(
             .await
             .ok();
         }
-        ProposalState::InProgress => {}
-        ProposalState::MilestoneVote => {}
-        ProposalState::DelayVote => {}
         ProposalState::WaitingForMilestoneFund => {
             if let Some((index, next_milestone)) = has_next_milestone(&proposal_sample) {
                 Proposal::update_progress(
@@ -669,11 +663,7 @@ pub async fn send_funds(
             .await
             .ok();
         }
-        ProposalState::WaitingForAcceptanceReport => {}
-        ProposalState::Completed => {}
-        ProposalState::WaitingReexamine => {}
-        ProposalState::ReexamineVote => {}
-        ProposalState::RectificationVote => {}
+        _ => {}
     }
 
     Ok(ok_simple())
@@ -884,6 +874,186 @@ pub async fn submit_acceptance_report(
         &body.did,
     )
     .await
+    .ok();
+
+    Ok(ok_simple())
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct RectificationVoteParams {
+    pub proposal_uri: String,
+    pub timestamp: i64,
+}
+
+impl SignedParam for RectificationVoteParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/task/rectification_vote",
+    description = "发起整改投票"
+)]
+pub async fn rectification_vote(
+    State(state): State<AppView>,
+    Json(body): Json<SignedBody<RectificationVoteParams>>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let SignedBody::<RectificationVoteParams> { params, did, .. } = body;
+
+    let (sql, values) = Proposal::build_select(None)
+        .and_where(Expr::col(Proposal::Uri).eq(&params.proposal_uri))
+        .build_sqlx(PostgresQueryBuilder);
+
+    let proposal_row: ProposalRow = query_as_with(&sql, values.clone())
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| {
+            debug!("exec sql failed: {e}");
+            AppError::ExecSqlFailed(e.to_string())
+        })?;
+
+    // check proposal state
+    if proposal_row.state != (ProposalState::WaitingReexamine as i32) {
+        return Err(AppError::ValidateFailed(
+            "proposal state not WaitingReexamine".to_string(),
+        ));
+    }
+
+    //  check AMA completed
+    let (sql, values) = Meeting::build_select()
+        .and_where(Expr::col(Meeting::ProposalUri).eq(&params.proposal_uri))
+        .and_where(Expr::col(Meeting::ProposalState).eq(ProposalState::WaitingReexamine as i32))
+        .and_where(Expr::col(Meeting::State).eq(MeetingState::Finished as i32))
+        .build_sqlx(PostgresQueryBuilder);
+    let _meeting_row: MeetingRow = query_as_with(&sql, values)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| {
+            debug!("fetch meeting failed: {e}");
+            AppError::ValidateFailed("Reexamine meeting not completed".to_string())
+        })?;
+
+    // create vote_meta
+    let vote_outputs_data = create_vote_tx(
+        &state,
+        &params.proposal_uri,
+        ProposalState::RectificationVote,
+        &did,
+    )
+    .await?;
+
+    Task::complete(
+        &state.db,
+        &proposal_row.uri,
+        TaskType::RectificationVote,
+        &did,
+    )
+    .await
+    .ok();
+
+    Ok(ok(vote_outputs_data))
+}
+
+#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct RectificationParams {
+    pub proposal_uri: String,
+    pub progress: i32,
+    /// record value
+    pub value: Value,
+    pub timestamp: i64,
+}
+
+impl SignedParam for RectificationParams {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
+}
+
+#[utoipa::path(post, path = "/api/task/rectification")]
+pub async fn rectification(
+    State(state): State<AppView>,
+    Json(body): Json<SignedBody<RectificationParams>>,
+) -> Result<impl IntoResponse, AppError> {
+    body.validate()
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, value) = Administrator::build_select()
+        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
+        .build_sqlx(PostgresQueryBuilder);
+    let _admin_row: AdministratorRow = query_as_with(&sql, value)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
+
+    body.verify_signature(&state.indexer_did_url)
+        .await
+        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
+
+    let (sql, values) = Proposal::build_select(None)
+        .and_where(Expr::col(Proposal::Uri).eq(&body.params.proposal_uri))
+        .build_sqlx(PostgresQueryBuilder);
+
+    let proposal_row: ProposalRow = query_as_with(&sql, values.clone())
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| {
+            debug!("exec sql failed: {e}");
+            AppError::ExecSqlFailed(e.to_string())
+        })?;
+
+    // check proposal state
+    if proposal_row.state != (ProposalState::WaitingRectification as i32) {
+        return Err(AppError::ValidateFailed(
+            "proposal state not WaitingRectification".to_string(),
+        ));
+    }
+
+    Proposal::update(
+        &state.db,
+        body.params.value,
+        &body.params.proposal_uri,
+        &proposal_row.cid,
+    )
+    .await?;
+    Proposal::update_progress(
+        &state.db,
+        &body.params.proposal_uri,
+        ProposalState::InProgress as i32,
+        body.params.progress,
+    )
+    .await?;
+    Timeline::insert(
+        &state.db,
+        &TimelineRow {
+            id: 0,
+            timeline_type: TimelineType::Rectification as i32,
+            message: "Rectification".to_string(),
+            target: body.params.proposal_uri.to_string(),
+            operator: body.did.clone(),
+            timestamp: chrono::Local::now(),
+        },
+    )
+    .await
+    .map_err(|e| error!("insert timeline failed: {e}"))
     .ok();
 
     Ok(ok_simple())

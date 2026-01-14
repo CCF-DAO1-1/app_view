@@ -435,7 +435,6 @@ fn test_timestamp() {
 #[utoipa::path(
     post,
     path = "/api/proposal/initiation_vote",
-    params(StateQuery),
     description = "发起立项投票"
 )]
 pub async fn initiation_vote(

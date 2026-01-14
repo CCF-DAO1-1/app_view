@@ -321,13 +321,36 @@ pub async fn check_vote_meta_finished(
                     .map_err(|e| error!("insert task failed: {e}"))
                     .ok();
                 }
-                ProposalState::ReexamineVote => {
-                    error!("VoteResult::Agree -> ProposalState::ReexamineVote not implemented yet");
-                }
-                ProposalState::RectificationVote => {
-                    error!(
-                        "VoteResult::Agree -> ProposalState::RectificationVote not implemented yet"
-                    );
+                ProposalState::ReexamineVote | ProposalState::RectificationVote => {
+                    Proposal::update_state(
+                        &db,
+                        &proposal_uri,
+                        ProposalState::WaitingRectification as i32,
+                    )
+                    .await?;
+                    let admins = Administrator::fetch_all(&db)
+                        .await
+                        .iter()
+                        .map(|admin| admin.did.clone())
+                        .collect();
+                    Task::insert(
+                        &db,
+                        &TaskRow {
+                            id: 0,
+                            task_type: TaskType::Rectification as i32,
+                            message: "Rectification".to_string(),
+                            target: proposal_uri.clone(),
+                            operators: admins,
+                            processor: None,
+                            deadline: chrono::Local::now() + chrono::Duration::days(30),
+                            state: TaskState::Unread as i32,
+                            updated: chrono::Local::now(),
+                            created: chrono::Local::now(),
+                        },
+                    )
+                    .await
+                    .map_err(|e| error!("insert task failed: {e}"))
+                    .ok();
                 }
                 _ => {}
             },
@@ -448,9 +471,29 @@ pub async fn check_vote_meta_finished(
                         .ok();
                 }
                 ProposalState::ReexamineVote => {
-                    error!(
-                        "VoteResult::Failed -> ProposalState::ReexamineVote not implemented yet"
-                    );
+                    let admins = Administrator::fetch_all(&db)
+                        .await
+                        .iter()
+                        .map(|admin| admin.did.clone())
+                        .collect();
+                    Task::insert(
+                        &db,
+                        &TaskRow {
+                            id: 0,
+                            task_type: TaskType::RectificationVote as i32,
+                            message: "RectificationVote".to_string(),
+                            target: proposal_uri.clone(),
+                            operators: admins,
+                            processor: None,
+                            deadline: chrono::Local::now() + chrono::Duration::days(30),
+                            state: TaskState::Unread as i32,
+                            updated: chrono::Local::now(),
+                            created: chrono::Local::now(),
+                        },
+                    )
+                    .await
+                    .map_err(|e| error!("insert task failed: {e}"))
+                    .ok();
                 }
                 ProposalState::RectificationVote => {
                     Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
