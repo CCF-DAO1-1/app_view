@@ -9,7 +9,7 @@ use crate::{
     smt::{CkbSMT, SMT_VALUE},
 };
 
-pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job> {
+pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<Job> {
     let app = app.clone();
     let mut job = Job::new_async(cron, move |_uuid, _scheduler| {
         Box::pin({
@@ -22,7 +22,7 @@ pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job>
     })?;
 
     job.on_removed_notification_add(
-        sched,
+        scheduler,
         Box::new(|job_id, notification_id, type_of_notification| {
             Box::pin(async move {
                 info!(
@@ -57,7 +57,7 @@ pub async fn build_vote_whitelist(
         {
             if deposit > 0 {
                 info!(
-                    "DID: {} with CKB address: {} has deposit: {} shannons, added to vote whitelist",
+                    "DID: {} with CKB address: {} has deposit: {} shannon, added to vote whitelist",
                     did, ckb_addr, deposit
                 );
                 let address = crate::AddressParser::default()
@@ -77,7 +77,7 @@ pub async fn build_vote_whitelist(
                 smt_tree.update(key.into(), SMT_VALUE.into()).ok();
             } else {
                 info!(
-                    "DID: {} with CKB address: {} has deposit: {} shannons, not qualified for vote whitelist",
+                    "DID: {} with CKB address: {} has deposit: {} shannon, not qualified for vote whitelist",
                     did, ckb_addr, deposit
                 );
             }

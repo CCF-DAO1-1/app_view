@@ -8,7 +8,7 @@ pub async fn all_votes(
     args: &str,
     epoch_number: i64,
     epoch_index: i64,
-    epoch_lenth: i64,
+    epoch_length: i64,
 ) -> Result<Value> {
     let rsp = reqwest::Client::new()
         .get(format!("{url}/all-votes"))
@@ -16,7 +16,7 @@ pub async fn all_votes(
             ("args", args),
             ("epoch_number", &epoch_number.to_string()),
             ("epoch_index", &epoch_index.to_string()),
-            ("epoch_length", &epoch_lenth.to_string()),
+            ("epoch_length", &epoch_length.to_string()),
         ])
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
@@ -37,7 +37,7 @@ pub async fn address_vote(
     ckb_addr: &str,
     epoch_number: i64,
     epoch_index: i64,
-    epoch_lenth: i64,
+    epoch_length: i64,
 ) -> Result<Value> {
     reqwest::Client::new()
         .get(format!("{url}/address-vote"))
@@ -46,7 +46,7 @@ pub async fn address_vote(
             ("ckb_addr", ckb_addr),
             ("epoch_number", &epoch_number.to_string()),
             ("epoch_index", &epoch_index.to_string()),
-            ("epoch_length", &epoch_lenth.to_string()),
+            ("epoch_length", &epoch_length.to_string()),
         ])
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))

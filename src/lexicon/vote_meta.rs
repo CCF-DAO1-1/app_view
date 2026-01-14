@@ -21,7 +21,7 @@ pub enum VoteMeta {
     Candidates,
     StartTime,
     EndTime,
-    Creater,
+    Creator,
     Results,
     Created,
 }
@@ -67,7 +67,7 @@ impl VoteMeta {
             .col(ColumnDef::new(Self::StartTime).big_integer().not_null())
             .col(ColumnDef::new(Self::EndTime).big_integer().not_null())
             .col(
-                ColumnDef::new(Self::Creater)
+                ColumnDef::new(Self::Creator)
                     .string()
                     .not_null()
                     .default(""),
@@ -96,7 +96,7 @@ impl VoteMeta {
                 Self::Candidates,
                 Self::StartTime,
                 Self::EndTime,
-                Self::Creater,
+                Self::Creator,
                 Self::Results,
                 Self::Created,
             ])
@@ -109,7 +109,7 @@ impl VoteMeta {
                 row.candidates.clone().into(),
                 row.start_time.into(),
                 row.end_time.into(),
-                row.creater.clone().into(),
+                row.creator.clone().into(),
                 row.results.clone().into(),
                 Expr::current_timestamp(),
             ])?
@@ -159,7 +159,7 @@ impl VoteMeta {
                 (Self::Table, Self::Candidates),
                 (Self::Table, Self::StartTime),
                 (Self::Table, Self::EndTime),
-                (Self::Table, Self::Creater),
+                (Self::Table, Self::Creator),
                 (Self::Table, Self::Results),
                 (Self::Table, Self::Created),
             ])
@@ -179,7 +179,7 @@ pub struct VoteMetaRow {
     pub candidates: Vec<String>,
     pub start_time: i64,
     pub end_time: i64,
-    pub creater: String,
+    pub creator: String,
     pub results: Option<Value>,
     pub created: DateTime<Local>,
 }

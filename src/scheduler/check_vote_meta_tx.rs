@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job> {
+pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<Job> {
     let app = app.clone();
     let mut job = Job::new_async(cron, move |_uuid, _scheduler| {
         Box::pin({
@@ -27,7 +27,7 @@ pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job>
     })?;
 
     job.on_removed_notification_add(
-        sched,
+        scheduler,
         Box::new(|job_id, notification_id, type_of_notification| {
             Box::pin(async move {
                 info!(
@@ -51,7 +51,7 @@ pub async fn check_vote_meta_tx(
             (VoteMeta::Table, VoteMeta::TxHash),
             (VoteMeta::Table, VoteMeta::ProposalUri),
             (VoteMeta::Table, VoteMeta::ProposalState),
-            (VoteMeta::Table, VoteMeta::Creater),
+            (VoteMeta::Table, VoteMeta::Creator),
             (VoteMeta::Table, VoteMeta::Created),
         ])
         .from(VoteMeta::Table)
@@ -69,7 +69,7 @@ pub async fn check_vote_meta_tx(
             })
             .ok();
     if let Some(rows) = rows {
-        for (id, tx_hash, proposal_uri, proposal_state, creater, created) in rows {
+        for (id, tx_hash, proposal_uri, proposal_state, creator, created) in rows {
             if let Some(tx_hash) = tx_hash {
                 let tx_status = get_tx_status(&ckb_client, &tx_hash).await;
                 if let Ok(tx_status) = tx_status {
@@ -122,7 +122,7 @@ pub async fn check_vote_meta_tx(
                                     timeline_type: timeline_type as i32,
                                     message: format!("{timeline_type:?}"),
                                     target: proposal_uri.clone(),
-                                    operator: creater,
+                                    operator: creator,
                                     timestamp: chrono::Local::now(),
                                 },
                             )

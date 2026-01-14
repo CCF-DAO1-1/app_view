@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job> {
+pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<Job> {
     let app = app.clone();
     let mut job = Job::new_async(cron, move |_uuid, _scheduler| {
         Box::pin({
@@ -38,7 +38,7 @@ pub async fn job(sched: &JobScheduler, app: &AppView, cron: &str) -> Result<Job>
     })?;
 
     job.on_removed_notification_add(
-        sched,
+        scheduler,
         Box::new(|job_id, notification_id, type_of_notification| {
             Box::pin(async move {
                 info!(
@@ -78,7 +78,7 @@ pub async fn check_vote_meta_finished(
         proposal_uri,
         proposal_state,
         end_time,
-        creater,
+        creator,
         tx_hash,
         candidates,
         ..
@@ -466,7 +466,7 @@ pub async fn check_vote_meta_finished(
                 timeline_type: TimelineType::VoteFinished as i32,
                 message: json!(vote_results).to_string(),
                 target: proposal_uri.clone(),
-                operator: creater,
+                operator: creator,
                 timestamp: chrono::Local::now(),
             },
         )

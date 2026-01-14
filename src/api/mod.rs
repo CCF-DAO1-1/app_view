@@ -262,7 +262,7 @@ pub async fn create_vote_tx(
             ],
             start_time: time_range.0 as i64,
             end_time: time_range.1 as i64,
-            creater: creator.to_string(),
+            creator: creator.to_string(),
             results: None,
             created: chrono::Local::now(),
         };

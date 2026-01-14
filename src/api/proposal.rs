@@ -489,7 +489,7 @@ pub async fn initiation_vote(
             AppError::ValidateFailed("AMA meeting not completed".to_string())
         })?;
 
-    // check proposaler's weight > 10_000_000_000_000
+    // check proposer's weight > 10_000_000_000_000
     let ckb_addr = crate::ckb::get_ckb_addr_by_did(&state.ckb_client, &did).await?;
     // TODO: use ckb
     let weight =

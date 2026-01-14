@@ -22,7 +22,7 @@ pub enum Meeting {
     ProposalState,
     State,
     Report,
-    Creater,
+    Creator,
     Updated,
     Created,
 }
@@ -87,7 +87,7 @@ impl Meeting {
                     .default(MeetingState::default() as i32),
             )
             .col(ColumnDef::new(Self::Report).string())
-            .col(ColumnDef::new(Self::Creater).string().not_null())
+            .col(ColumnDef::new(Self::Creator).string().not_null())
             .col(
                 ColumnDef::new(Self::Updated)
                     .timestamp_with_time_zone()
@@ -130,7 +130,7 @@ impl Meeting {
                 Self::ProposalState,
                 Self::State,
                 Self::Report,
-                Self::Creater,
+                Self::Creator,
                 Self::Updated,
                 Self::Created,
             ])
@@ -145,7 +145,7 @@ impl Meeting {
                 row.proposal_state.into(),
                 row.state.into(),
                 row.report.clone().into(),
-                row.creater.clone().into(),
+                row.creator.clone().into(),
                 Expr::current_timestamp(),
                 Expr::current_timestamp(),
             ])?
@@ -172,7 +172,7 @@ impl Meeting {
                 (Self::Table, Self::ProposalState),
                 (Self::Table, Self::State),
                 (Self::Table, Self::Report),
-                (Self::Table, Self::Creater),
+                (Self::Table, Self::Creator),
                 (Self::Table, Self::Updated),
                 (Self::Table, Self::Created),
             ])
@@ -209,7 +209,7 @@ pub struct MeetingRow {
     pub proposal_state: i32,
     pub state: i32,
     pub report: Option<String>,
-    pub creater: String,
+    pub creator: String,
     pub updated: DateTime<Local>,
     pub created: DateTime<Local>,
 }

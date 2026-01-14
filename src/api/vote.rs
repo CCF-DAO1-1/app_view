@@ -270,7 +270,7 @@ pub async fn create_vote_meta(
             candidates: body.params.candidates.clone(),
             start_time: time_range.0 as i64,
             end_time: time_range.1 as i64,
-            creater: body.did.clone(),
+            creator: body.did.clone(),
             results: None,
             created: chrono::Local::now(),
         };
@@ -337,8 +337,8 @@ pub async fn update_meta_tx_hash(
             AppError::ExecSqlFailed(e.to_string())
         })?;
 
-    if vote_meta_row.creater != body.did {
-        return Err(AppError::ValidateFailed("not creater".to_string()));
+    if vote_meta_row.creator != body.did {
+        return Err(AppError::ValidateFailed("not creator".to_string()));
     }
 
     VoteMeta::update_tx_hash(&state.db, body.params.id, &body.params.tx_hash)
@@ -483,7 +483,7 @@ pub async fn prepare(
 
     if vote_meta_row.state != (VoteMetaState::Committed as i32) {
         return Err(AppError::ValidateFailed(format!(
-            "vote_meta not aready: {}",
+            "vote_meta not already: {}",
             vote_meta_row.state
         )));
     }
@@ -560,7 +560,7 @@ pub async fn detail(
         && vote_meta_row.state != (VoteMetaState::Finished as i32)
     {
         return Err(AppError::ValidateFailed(format!(
-            "vote_meta not aready: {}",
+            "vote_meta not already: {}",
             vote_meta_row.state
         )));
     }

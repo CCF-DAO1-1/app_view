@@ -213,7 +213,7 @@ pub async fn create_meeting(
         proposal_state: proposal_row.state,
         state: 0,
         report: None,
-        creater: body.did.clone(),
+        creator: body.did.clone(),
         updated: chrono::Local::now(),
         created: chrono::Local::now(),
     };
