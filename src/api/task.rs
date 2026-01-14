@@ -726,6 +726,19 @@ pub async fn submit_milestone_report(
     )
     .await?;
 
+    Timeline::insert(
+        &state.db,
+        &TimelineRow {
+            id: 0,
+            timeline_type: TimelineType::SubmitMilestoneReport as i32,
+            message: body.params.report.clone(),
+            target: body.params.proposal_uri.clone(),
+            operator: body.did.clone(),
+            timestamp: chrono::Local::now(),
+        },
+    )
+    .await?;
+
     Task::complete(
         &state.db,
         &proposal_sample.uri,
@@ -785,6 +798,19 @@ pub async fn submit_delay_report(
         &body.params.proposal_uri,
         ProposalState::DelayVote,
         &body.did,
+    )
+    .await?;
+
+    Timeline::insert(
+        &state.db,
+        &TimelineRow {
+            id: 0,
+            timeline_type: TimelineType::SubmitDelayReport as i32,
+            message: body.params.report.clone(),
+            target: body.params.proposal_uri.clone(),
+            operator: body.did.clone(),
+            timestamp: chrono::Local::now(),
+        },
     )
     .await?;
 
