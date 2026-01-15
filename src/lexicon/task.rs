@@ -189,6 +189,24 @@ impl Task {
             .and_then(|r| r.try_get(0))
             .map_err(|e| color_eyre::eyre::eyre!(e))
     }
+
+    pub async fn complete_all(db: &Pool<Postgres>, target: &str, processor: &str) -> Result<i32> {
+        let (sql, values) = sea_query::Query::update()
+            .table(Self::Table)
+            .values([
+                (Self::State, (TaskState::Completed as i32).into()),
+                (Self::Updated, Expr::current_timestamp()),
+                (Self::Processor, processor.into()),
+            ])
+            .and_where(Expr::col(Self::Target).eq(target))
+            .returning_col(Self::Id)
+            .build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(&sql, values)
+            .fetch_one(db)
+            .await
+            .and_then(|r| r.try_get(0))
+            .map_err(|e| color_eyre::eyre::eyre!(e))
+    }
 }
 
 #[derive(sqlx::FromRow, Debug, Serialize)]

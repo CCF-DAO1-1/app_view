@@ -399,6 +399,15 @@ pub async fn submit_meeting_report(
             )
             .await?;
 
+            Task::complete(
+                &state.db,
+                &body.params.proposal_uri,
+                TaskType::SubmitReexamineReport,
+                &body.did,
+            )
+            .await
+            .ok();
+
             return Ok(ok(vote_outputs_data));
         }
         _ => {}
@@ -893,14 +902,9 @@ pub async fn submit_acceptance_report(
     )
     .await?;
 
-    Task::complete(
-        &state.db,
-        &proposal_sample.uri,
-        TaskType::SubmitAcceptanceReport,
-        &body.did,
-    )
-    .await
-    .ok();
+    Task::complete_all(&state.db, &proposal_sample.uri, &body.did)
+        .await
+        .ok();
 
     Ok(ok_simple())
 }
@@ -957,9 +961,9 @@ pub async fn rectification_vote(
         })?;
 
     // check proposal state
-    if proposal_row.state != (ProposalState::WaitingReexamine as i32) {
+    if proposal_row.state != (ProposalState::ReexamineVote as i32) {
         return Err(AppError::ValidateFailed(
-            "proposal state not WaitingReexamine".to_string(),
+            "proposal state not ReexamineVote".to_string(),
         ));
     }
 
@@ -1055,7 +1059,7 @@ pub async fn rectification(
 
     Proposal::update(
         &state.db,
-        body.params.value,
+        body.params.value.clone(),
         &body.params.proposal_uri,
         &proposal_row.cid,
     )
@@ -1072,7 +1076,7 @@ pub async fn rectification(
         &TimelineRow {
             id: 0,
             timeline_type: TimelineType::Rectification as i32,
-            message: "Rectification".to_string(),
+            message: body.params.value.to_string(),
             target: body.params.proposal_uri.to_string(),
             operator: body.did.clone(),
             timestamp: chrono::Local::now(),
@@ -1080,6 +1084,58 @@ pub async fn rectification(
     )
     .await
     .map_err(|e| error!("insert timeline failed: {e}"))
+    .ok();
+
+    let admins = Administrator::fetch_all(&state.db)
+        .await
+        .iter()
+        .map(|admin| admin.did.clone())
+        .collect::<Vec<_>>();
+
+    Task::insert(
+        &state.db,
+        &TaskRow {
+            id: 0,
+            task_type: TaskType::SubmitMilestoneReport as i32,
+            message: body.params.progress.to_string(),
+            target: body.params.proposal_uri.clone(),
+            operators: admins.clone(),
+            processor: None,
+            deadline: chrono::Local::now() + chrono::Duration::days(7),
+            state: TaskState::Unread as i32,
+            updated: chrono::Local::now(),
+            created: chrono::Local::now(),
+        },
+    )
+    .await
+    .map_err(|e| error!("insert task failed: {e}"))
+    .ok();
+    Task::insert(
+        &state.db,
+        &TaskRow {
+            id: 0,
+            task_type: TaskType::SubmitDelayReport as i32,
+            message: body.params.progress.to_string(),
+            target: body.params.proposal_uri.clone(),
+            operators: admins,
+            processor: None,
+            deadline: chrono::Local::now() + chrono::Duration::days(7),
+            state: TaskState::Unread as i32,
+            updated: chrono::Local::now(),
+            created: chrono::Local::now(),
+        },
+    )
+    .await
+    .map_err(|e| error!("insert task failed: {e}"))
+    .ok();
+
+    Task::complete(
+        &state.db,
+        &proposal_row.uri,
+        TaskType::Rectification,
+        &body.did,
+    )
+    .await
     .ok();
 
     Ok(ok_simple())
