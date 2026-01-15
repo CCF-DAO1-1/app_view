@@ -1076,7 +1076,11 @@ pub async fn rectification(
         &TimelineRow {
             id: 0,
             timeline_type: TimelineType::Rectification as i32,
-            message: body.params.value.to_string(),
+            message: json!({
+                "old_record": proposal_row.record,
+                "new_record": body.params.value
+            })
+            .to_string(),
             target: body.params.proposal_uri.to_string(),
             operator: body.did.clone(),
             timestamp: chrono::Local::now(),
