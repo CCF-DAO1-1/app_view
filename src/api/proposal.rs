@@ -799,6 +799,6 @@ pub async fn status(State(state): State<AppView>) -> Result<impl IntoResponse, A
 
     Ok(ok(json!({
         "in_progress_num": proposals.len(),
-        "budget_amount_in_progress": budget_amount_in_progress
+        "budget_amount_in_progress": budget_amount_in_progress.to_string()
     })))
 }
