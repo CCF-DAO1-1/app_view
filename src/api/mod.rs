@@ -49,6 +49,7 @@ use crate::{
         proposal::receiver_addr,
         proposal::list_self,
         proposal::replied,
+        proposal::status,
         reply::list,
         like::list,
         vote::bind_list,

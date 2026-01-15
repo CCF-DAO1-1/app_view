@@ -770,3 +770,35 @@ pub fn calculate_vote_result(
     }
     VoteResult::Failed("unknown".to_string())
 }
+
+#[utoipa::path(get, path = "/api/proposal/status")]
+pub async fn status(State(state): State<AppView>) -> Result<impl IntoResponse, AppError> {
+    let (sql, value) = Proposal::build_sample()
+        .and_where(Expr::col(Proposal::State).is_not_in([
+            ProposalState::End as i32,
+            ProposalState::Draft as i32,
+            ProposalState::Completed as i32,
+        ]))
+        .build_sqlx(PostgresQueryBuilder);
+    let proposals: Vec<ProposalSample> = query_as_with(&sql, value)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| AppError::ExecSqlFailed(e.to_string()))?;
+
+    let mut budget_amount_in_progress = 0;
+    for proposal in proposals.iter() {
+        if let Some(proposal_budget) = proposal
+            .record
+            .pointer("/data/budget")
+            .and_then(|t| t.as_str())
+            .and_then(|t| t.parse::<u64>().ok())
+        {
+            budget_amount_in_progress += proposal_budget;
+        }
+    }
+
+    Ok(ok(json!({
+        "in_progress_num": proposals.len(),
+        "budget_amount_in_progress": budget_amount_in_progress
+    })))
+}
