@@ -176,8 +176,13 @@ impl Proposal {
         let proposal_row: ProposalRow = query_as_with(&sql, values.clone()).fetch_one(db).await?;
 
         // check proposal state
-        if proposal_row.state != (ProposalState::Draft as i32) {
-            return Err(eyre!("proposal state not draft".to_string(),));
+        if proposal_row.state != (ProposalState::Draft as i32)
+            && proposal_row.state != (ProposalState::WaitingRectification as i32)
+        {
+            return Err(eyre!(format!(
+                "proposal cannot be updated in {}",
+                proposal_row.state
+            ),));
         }
 
         let (sql, values) = sea_query::Query::update()
