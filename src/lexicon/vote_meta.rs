@@ -197,7 +197,7 @@ pub struct VoteResults {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub enum VoteResult {
-    Voting,
+    Voting = 0,
     Agree,
     AgreeLessThan51PCT,
     AgreeLessThan67PCT,
