@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use ckb_sdk::{Address, AddressPayload, CkbRpcAsyncClient, NetworkType};
 use ckb_types::{
+    bytes::Bytes,
     core::{EpochNumberWithFraction, ScriptHashType},
-    prelude::Pack,
+    prelude::{Entity, Pack},
 };
 use color_eyre::{
     Result,
@@ -35,7 +36,7 @@ pub async fn get_nervos_dao_deposit(ckb_client: &CkbRpcAsyncClient, ckb_addr: &s
                 script_type: ckb_sdk::rpc::ckb_indexer::ScriptType::Type,
                 script_search_mode: None,
                 filter: Some(ckb_sdk::rpc::ckb_indexer::SearchKeyFilter {
-                    script: Some(ckb_jsonrpc_types::Script::from(lock_hash)),
+                    script: Some(ckb_jsonrpc_types::Script::from(lock_hash.clone())),
                     script_len_range: None,
                     output_data: None,
                     output_data_filter_mode: None,
@@ -56,7 +57,104 @@ pub async fn get_nervos_dao_deposit(ckb_client: &CkbRpcAsyncClient, ckb_addr: &s
         let output: &ckb_jsonrpc_types::CellOutput = &cell.output;
         total_capacity += output.capacity.value();
     }
+
+    if let Ok(c) = pw_lock_capacity(ckb_client, &lock_hash).await {
+        total_capacity += c;
+    }
+
     Ok(total_capacity)
+}
+
+async fn pw_lock_capacity(
+    ckb_client: &CkbRpcAsyncClient,
+    lock: &ckb_types::packed::Script,
+) -> Result<u64> {
+    let mut total_capacity = 0;
+    let code_hash = lock.code_hash().to_string();
+    if code_hash == "f329effd1c475a2978453c8600e1eaf0bc2087ee093c3ee64cc96ec6847752cb" {
+        let args = hex::encode(lock.args().raw_data());
+        if args.starts_with("12") {
+            let payload = AddressPayload::Full {
+                hash_type: ScriptHashType::Type,
+                code_hash: ckb_types::packed::Byte32::from_slice(
+                    &hex::decode(
+                        "58c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63",
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+                args: Bytes::from_owner(lock.args().raw_data()[1..21].to_vec()),
+            };
+            let address = Address::new(NetworkType::Testnet, payload.clone(), true);
+
+            let r = ckb_client
+                .get_cells(
+                    ckb_sdk::rpc::ckb_indexer::SearchKey {
+                        script: ckb_jsonrpc_types::Script {
+                            code_hash: ckb_types::H256(
+                                hex::decode(
+                                    "82d76d1b75fe2fd9a27dfbaa65a039221a380d76c926f378d3f81cf3e7e13f2e",
+                                )
+                                .unwrap()
+                                .try_into()
+                                .unwrap(),
+                            ),
+                            hash_type: ckb_jsonrpc_types::ScriptHashType::Type,
+                            args: ckb_jsonrpc_types::JsonBytes::default(),
+                        },
+                        script_type: ckb_sdk::rpc::ckb_indexer::ScriptType::Type,
+                        script_search_mode: None,
+                        filter: Some(ckb_sdk::rpc::ckb_indexer::SearchKeyFilter {
+                            script: Some(ckb_jsonrpc_types::Script::from(ckb_types::packed::Script::from(address.payload()))),
+                            script_len_range: None,
+                            output_data: None,
+                            output_data_filter_mode: None,
+                            output_data_len_range: None,
+                            output_capacity_range: None,
+                            block_range: None,
+                        }),
+                        with_data: None,
+                        group_by_transaction: None,
+                    },
+                    ckb_sdk::rpc::ckb_indexer::Order::Asc,
+                    10000.into(),
+                    None,
+                )
+                .await?;
+            for cell in &r.objects {
+                let output: &ckb_jsonrpc_types::CellOutput = &cell.output;
+                total_capacity += output.capacity.value();
+            }
+        }
+    }
+    Ok(total_capacity)
+}
+
+#[tokio::test]
+async fn test_pw_lock() {
+    let ckb_addr = "ckt1qrejnmlar3r452tcg57gvq8patctcgy8acync0hxfnyka35ywafvkqgjqphkqtnweknd4rge865uquk9fn300xrfqqg8fc2q";
+    let address = crate::AddressParser::default()
+        .set_network(ckb_sdk::NetworkType::Testnet)
+        .parse(ckb_addr)
+        .unwrap();
+    println!("{address}");
+    let lock = ckb_types::packed::Script::from(address.payload());
+    println!("{lock}");
+
+    let b = lock.args().raw_data()[1..21].to_vec();
+    println!("0x{}", hex::encode(&b));
+
+    let payload = AddressPayload::Full {
+        hash_type: ScriptHashType::Type,
+        code_hash: ckb_types::packed::Byte32::from_slice(
+            &hex::decode("58c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63")
+                .unwrap(),
+        )
+        .unwrap(),
+        args: Bytes::from_owner(b),
+    };
+    let address = Address::new(NetworkType::Testnet, payload.clone(), true).to_string();
+    println!("{address}");
 }
 
 #[test]
