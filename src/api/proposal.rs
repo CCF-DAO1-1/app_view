@@ -675,10 +675,10 @@ pub fn calculate_vote_result(
                     if agree >= 0.67 {
                         return VoteResult::Agree;
                     } else {
-                        return VoteResult::Against("agree rate not enough(67%)".to_string());
+                        return VoteResult::AgreeLessThan67PCT;
                     }
                 } else {
-                    return VoteResult::Failed("valid_weight_sum not enough(1.85T)".to_string());
+                    return VoteResult::TotalLessThan185000000CKB;
                 }
             } else if let Some(proposal_budget) = proposal
                 .record
@@ -693,12 +693,10 @@ pub fn calculate_vote_result(
                     if agree >= 0.51 {
                         return VoteResult::Agree;
                     } else {
-                        return VoteResult::Against("agree rate not enough(51%)".to_string());
+                        return VoteResult::AgreeLessThan51PCT;
                     }
                 } else {
-                    return VoteResult::Failed(
-                        "valid_weight_sum not enough(3x budget)".to_string(),
-                    );
+                    return VoteResult::TotalLessThan3X;
                 }
             }
         }
@@ -708,7 +706,7 @@ pub fn calculate_vote_result(
                     let against =
                         results.candidate_votes[2] as f64 / results.valid_weight_sum as f64;
                     if against > 0.67 {
-                        return VoteResult::Against("against rate too high(67%)".to_string());
+                        return VoteResult::AgainstMoreThan67PCT;
                     } else {
                         return VoteResult::Agree;
                     }
@@ -725,7 +723,7 @@ pub fn calculate_vote_result(
                     let against =
                         results.candidate_votes[2] as f64 / results.valid_weight_sum as f64;
                     if against > 0.51 {
-                        return VoteResult::Against("against rate too high(51%)".to_string());
+                        return VoteResult::AgainstMoreThan51PCT;
                     } else {
                         return VoteResult::Agree;
                     }
@@ -736,15 +734,15 @@ pub fn calculate_vote_result(
         }
         ProposalState::RectificationVote => {
             if proposal_type == "BudgetProposal" {
-                if results.valid_weight_sum >= 6200_0000_0000_0000 {
+                if results.valid_weight_sum >= 1_8500_0000_0000_0000 {
                     let agree = results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
                     if agree >= 0.67 {
                         return VoteResult::Agree;
                     } else {
-                        return VoteResult::Against("agree rate not enough(67%)".to_string());
+                        return VoteResult::AgreeLessThan67PCT;
                     }
                 } else {
-                    return VoteResult::Against("valid_weight_sum not enough(1.85T)".to_string());
+                    return VoteResult::TotalLessThan185000000CKB;
                 }
             } else if let Some(proposal_budget) = proposal
                 .record
@@ -752,23 +750,21 @@ pub fn calculate_vote_result(
                 .and_then(|t| t.as_str())
                 .and_then(|t| t.parse::<u64>().ok())
             {
-                if results.valid_weight_sum >= (proposal_budget * 1_0000_0000) {
+                if results.valid_weight_sum >= (proposal_budget * 3_0000_0000) {
                     let agree = results.candidate_votes[1] as f64 / results.valid_weight_sum as f64;
                     if agree >= 0.51 {
                         return VoteResult::Agree;
                     } else {
-                        return VoteResult::Against("agree rate not enough(51%)".to_string());
+                        return VoteResult::AgreeLessThan51PCT;
                     }
                 } else {
-                    return VoteResult::Against(
-                        "valid_weight_sum not enough(3x budget)".to_string(),
-                    );
+                    return VoteResult::TotalLessThan3X;
                 }
             }
         }
         _ => (),
     }
-    VoteResult::Failed("unknown".to_string())
+    VoteResult::Failed
 }
 
 #[utoipa::path(get, path = "/api/proposal/status")]

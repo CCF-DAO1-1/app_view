@@ -199,6 +199,11 @@ pub struct VoteResults {
 pub enum VoteResult {
     Voting,
     Agree,
-    Against(String),
-    Failed(String),
+    AgreeLessThan51PCT,
+    AgreeLessThan67PCT,
+    TotalLessThan185000000CKB,
+    TotalLessThan3X,
+    AgainstMoreThan51PCT,
+    AgainstMoreThan67PCT,
+    Failed,
 }

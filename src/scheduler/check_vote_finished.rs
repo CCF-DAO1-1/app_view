@@ -354,152 +354,123 @@ pub async fn check_vote_meta_finished(
                 }
                 _ => {}
             },
-            VoteResult::Against(_reason) => match ProposalState::from(proposal_state) {
-                ProposalState::InitiationVote => {
-                    Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
-                    Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
-                        .await
-                        .ok();
-                    Task::complete(&db, &proposal_uri, TaskType::SubmitAMAReport, "SYSTEM")
-                        .await
-                        .ok();
-                }
-                ProposalState::MilestoneVote | ProposalState::DelayVote => {
-                    Proposal::update_state(
-                        &db,
-                        &proposal_uri,
-                        ProposalState::WaitingReexamine as i32,
-                    )
-                    .await?;
+            VoteResult::AgainstMoreThan51PCT | VoteResult::AgainstMoreThan67PCT => {
+                match ProposalState::from(proposal_state) {
+                    ProposalState::MilestoneVote | ProposalState::DelayVote => {
+                        Proposal::update_state(
+                            &db,
+                            &proposal_uri,
+                            ProposalState::WaitingReexamine as i32,
+                        )
+                        .await?;
 
-                    let admins = Administrator::fetch_all(&db)
+                        let admins = Administrator::fetch_all(&db)
+                            .await
+                            .iter()
+                            .map(|admin| admin.did.clone())
+                            .collect();
+                        Task::insert(
+                            &db,
+                            &TaskRow {
+                                id: 0,
+                                task_type: TaskType::CreateReexamineMeeting as i32,
+                                message: "CreateReexamineMeeting".to_string(),
+                                target: proposal_uri.clone(),
+                                operators: admins,
+                                processor: None,
+                                deadline: chrono::Local::now() + chrono::Duration::days(2),
+                                state: TaskState::Unread as i32,
+                                updated: chrono::Local::now(),
+                                created: chrono::Local::now(),
+                            },
+                        )
                         .await
-                        .iter()
-                        .map(|admin| admin.did.clone())
-                        .collect();
-                    Task::insert(
-                        &db,
-                        &TaskRow {
-                            id: 0,
-                            task_type: TaskType::CreateReexamineMeeting as i32,
-                            message: "CreateReexamineMeeting".to_string(),
-                            target: proposal_uri.clone(),
-                            operators: admins,
-                            processor: None,
-                            deadline: chrono::Local::now() + chrono::Duration::days(2),
-                            state: TaskState::Unread as i32,
-                            updated: chrono::Local::now(),
-                            created: chrono::Local::now(),
-                        },
-                    )
-                    .await
-                    .map_err(|e| error!("insert task failed: {e}"))
-                    .ok();
+                        .map_err(|e| error!("insert task failed: {e}"))
+                        .ok();
 
-                    Task::complete(
-                        &db,
-                        &proposal_uri,
-                        TaskType::SubmitMilestoneReport,
-                        "SYSTEM",
-                    )
-                    .await
-                    .ok();
-                    Task::complete(&db, &proposal_uri, TaskType::SubmitDelayReport, "SYSTEM")
+                        Task::complete(
+                            &db,
+                            &proposal_uri,
+                            TaskType::SubmitMilestoneReport,
+                            "SYSTEM",
+                        )
                         .await
                         .ok();
+                        Task::complete(&db, &proposal_uri, TaskType::SubmitDelayReport, "SYSTEM")
+                            .await
+                            .ok();
+                    }
+                    _ => {}
                 }
-                ProposalState::ReexamineVote => {
-                    Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
+            }
+            VoteResult::AgreeLessThan51PCT | VoteResult::AgreeLessThan67PCT => {
+                match ProposalState::from(proposal_state) {
+                    ProposalState::InitiationVote => {
+                        Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32)
+                            .await?;
+                        Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
+                            .await
+                            .ok();
+                        Task::complete(&db, &proposal_uri, TaskType::SubmitAMAReport, "SYSTEM")
+                            .await
+                            .ok();
+                    }
+                    ProposalState::ReexamineVote => {
+                        Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32)
+                            .await?;
+                    }
+                    ProposalState::RectificationVote => {
+                        Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32)
+                            .await?;
+                    }
+                    _ => {}
                 }
-                ProposalState::RectificationVote => {
-                    Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
-                }
-                _ => {}
-            },
-            VoteResult::Failed(_reason) => match ProposalState::from(proposal_state) {
-                ProposalState::InitiationVote => {
-                    Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
-                    Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
+            }
+            VoteResult::TotalLessThan185000000CKB | VoteResult::TotalLessThan3X => {
+                match ProposalState::from(proposal_state) {
+                    ProposalState::InitiationVote => {
+                        Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32)
+                            .await?;
+                        Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
+                            .await
+                            .ok();
+                        Task::complete(&db, &proposal_uri, TaskType::SubmitAMAReport, "SYSTEM")
+                            .await
+                            .ok();
+                    }
+                    ProposalState::ReexamineVote => {
+                        let admins = Administrator::fetch_all(&db)
+                            .await
+                            .iter()
+                            .map(|admin| admin.did.clone())
+                            .collect();
+                        Task::insert(
+                            &db,
+                            &TaskRow {
+                                id: 0,
+                                task_type: TaskType::RectificationVote as i32,
+                                message: "RectificationVote".to_string(),
+                                target: proposal_uri.clone(),
+                                operators: admins,
+                                processor: None,
+                                deadline: chrono::Local::now() + chrono::Duration::days(30),
+                                state: TaskState::Unread as i32,
+                                updated: chrono::Local::now(),
+                                created: chrono::Local::now(),
+                            },
+                        )
                         .await
+                        .map_err(|e| error!("insert task failed: {e}"))
                         .ok();
-                    Task::complete(&db, &proposal_uri, TaskType::SubmitAMAReport, "SYSTEM")
-                        .await
-                        .ok();
+                    }
+                    ProposalState::RectificationVote => {
+                        Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32)
+                            .await?;
+                    }
+                    _ => {}
                 }
-                ProposalState::MilestoneVote | ProposalState::DelayVote => {
-                    Proposal::update_state(
-                        &db,
-                        &proposal_uri,
-                        ProposalState::WaitingReexamine as i32,
-                    )
-                    .await?;
-
-                    let admins = Administrator::fetch_all(&db)
-                        .await
-                        .iter()
-                        .map(|admin| admin.did.clone())
-                        .collect();
-                    Task::insert(
-                        &db,
-                        &TaskRow {
-                            id: 0,
-                            task_type: TaskType::CreateReexamineMeeting as i32,
-                            message: "CreateReexamineMeeting".to_string(),
-                            target: proposal_uri.clone(),
-                            operators: admins,
-                            processor: None,
-                            deadline: chrono::Local::now() + chrono::Duration::days(2),
-                            state: TaskState::Unread as i32,
-                            updated: chrono::Local::now(),
-                            created: chrono::Local::now(),
-                        },
-                    )
-                    .await
-                    .map_err(|e| error!("insert task failed: {e}"))
-                    .ok();
-
-                    Task::complete(
-                        &db,
-                        &proposal_uri,
-                        TaskType::SubmitMilestoneReport,
-                        "SYSTEM",
-                    )
-                    .await
-                    .ok();
-                    Task::complete(&db, &proposal_uri, TaskType::SubmitDelayReport, "SYSTEM")
-                        .await
-                        .ok();
-                }
-                ProposalState::ReexamineVote => {
-                    let admins = Administrator::fetch_all(&db)
-                        .await
-                        .iter()
-                        .map(|admin| admin.did.clone())
-                        .collect();
-                    Task::insert(
-                        &db,
-                        &TaskRow {
-                            id: 0,
-                            task_type: TaskType::RectificationVote as i32,
-                            message: "RectificationVote".to_string(),
-                            target: proposal_uri.clone(),
-                            operators: admins,
-                            processor: None,
-                            deadline: chrono::Local::now() + chrono::Duration::days(30),
-                            state: TaskState::Unread as i32,
-                            updated: chrono::Local::now(),
-                            created: chrono::Local::now(),
-                        },
-                    )
-                    .await
-                    .map_err(|e| error!("insert task failed: {e}"))
-                    .ok();
-                }
-                ProposalState::RectificationVote => {
-                    Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32).await?;
-                }
-                _ => {}
-            },
+            }
+            VoteResult::Failed => {}
         }
 
         Timeline::insert(

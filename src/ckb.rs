@@ -348,3 +348,10 @@ pub async fn test_get_vote_time_range(ckb_client: &CkbRpcAsyncClient) -> Result<
     );
     Ok((begin.full_value(), end.full_value()))
 }
+
+#[test]
+fn show_epoch() {
+    let epoch = 1979140794232921;
+    let epoch = EpochNumberWithFraction::from_full_value(epoch);
+    println!("{epoch}");
+}
