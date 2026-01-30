@@ -70,8 +70,10 @@ async fn pw_lock_capacity(
     lock: &ckb_types::packed::Script,
 ) -> Result<u64> {
     let mut total_capacity = 0;
-    let code_hash = lock.code_hash().to_string();
-    if code_hash == "f329effd1c475a2978453c8600e1eaf0bc2087ee093c3ee64cc96ec6847752cb" {
+    let code_hash = lock.code_hash().as_slice().to_vec();
+    if Ok(code_hash)
+        == hex::decode("f329effd1c475a2978453c8600e1eaf0bc2087ee093c3ee64cc96ec6847752cb")
+    {
         let args = hex::encode(lock.args().raw_data());
         if args.starts_with("12") {
             let payload = AddressPayload::Full {
@@ -132,7 +134,7 @@ async fn pw_lock_capacity(
 
 #[tokio::test]
 async fn test_pw_lock() {
-    let ckb_addr = "ckt1qrejnmlar3r452tcg57gvq8patctcgy8acync0hxfnyka35ywafvkqgjqphkqtnweknd4rge865uquk9fn300xrfqqg8fc2q";
+    let ckb_addr = "ckt1qrejnmlar3r452tcg57gvq8patctcgy8acync0hxfnyka35ywafvkqgjv3se7nm9mjen690t26r3zfccuxkwzme5qq4q85en";
     let address = crate::AddressParser::default()
         .set_network(ckb_sdk::NetworkType::Testnet)
         .parse(ckb_addr)
@@ -357,7 +359,7 @@ async fn get_live_cell() {
 #[tokio::test]
 async fn get_cells() {
     let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");
-    let ckb_addr = "ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqtyy4lspd4k86v8vz06n03dpjrdx5gzp7cxulwv8";
+    let ckb_addr = "ckt1qrejnmlar3r452tcg57gvq8patctcgy8acync0hxfnyka35ywafvkqgjv3se7nm9mjen690t26r3zfccuxkwzme5qq4q85en";
     let total_capacity = get_nervos_dao_deposit(&ckb_client, ckb_addr).await.unwrap();
     println!("total capacity: {total_capacity}");
 }
