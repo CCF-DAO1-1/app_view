@@ -277,7 +277,7 @@ pub async fn create_vote_tx(
     };
 
     let outputs_data = if vote_meta_row.tx_hash.is_none() {
-        let vote_meta = vote::build_vote_meta(state, &vote_meta_row, &proposal_hash).await?;
+        let vote_meta = vote::build_vote_meta(&state.db, &vote_meta_row, &proposal_hash).await?;
 
         let vote_meta_bytes = vote_meta.as_bytes().to_vec();
         let vote_meta_hex = hex::encode(vote_meta_bytes);

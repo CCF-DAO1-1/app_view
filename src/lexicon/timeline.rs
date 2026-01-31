@@ -51,6 +51,8 @@ pub enum TimelineType {
     SubmitReexamineReport,
     /// 20 项目整改
     Rectification,
+    /// 21 创建投票交易失败
+    VoteMetaTxChanged,
 }
 
 #[derive(Iden, Debug, Clone, Copy)]

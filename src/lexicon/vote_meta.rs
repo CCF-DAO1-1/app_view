@@ -39,6 +39,8 @@ pub enum VoteMetaState {
     Rejected = 3,
     /// 4 投票已结束
     Finished = 4,
+    /// 5 投票已改变
+    Changed = 5,
 }
 
 impl VoteMeta {

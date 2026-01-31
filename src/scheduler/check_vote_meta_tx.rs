@@ -1,16 +1,17 @@
-use chrono::{DateTime, Local};
 use color_eyre::Result;
+use molecule::prelude::Entity;
 use sea_query::{Expr, ExprTrait, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use crate::{
     AppView,
+    api::vote,
     ckb::get_tx_status,
     lexicon::{
         proposal::{Proposal, ProposalState},
         timeline::{Timeline, TimelineRow, TimelineType},
-        vote_meta::{VoteMeta, VoteMetaState},
+        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
     },
 };
 
@@ -45,41 +46,69 @@ pub async fn check_vote_meta_tx(
     db: sqlx::Pool<sqlx::Postgres>,
     ckb_client: ckb_sdk::CkbRpcAsyncClient,
 ) {
-    let (sql, values) = sea_query::Query::select()
-        .columns([
-            (VoteMeta::Table, VoteMeta::Id),
-            (VoteMeta::Table, VoteMeta::TxHash),
-            (VoteMeta::Table, VoteMeta::ProposalUri),
-            (VoteMeta::Table, VoteMeta::ProposalState),
-            (VoteMeta::Table, VoteMeta::Creator),
-            (VoteMeta::Table, VoteMeta::Created),
-        ])
-        .from(VoteMeta::Table)
+    let (sql, values) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Waiting as i32))
         .build_sqlx(PostgresQueryBuilder);
 
     #[allow(clippy::type_complexity)]
-    let rows: Option<Vec<(i32, Option<String>, String, i32, String, DateTime<Local>)>> =
-        sqlx::query_as_with(&sql, values.clone())
-            .fetch_all(&db)
-            .await
-            .map_err(|e| {
-                error!("{e}");
-                e
-            })
-            .ok();
+    let rows: Option<Vec<VoteMetaRow>> = sqlx::query_as_with(&sql, values.clone())
+        .fetch_all(&db)
+        .await
+        .map_err(|e| {
+            error!("{e}");
+            e
+        })
+        .ok();
     if let Some(rows) = rows {
-        for (id, tx_hash, proposal_uri, proposal_state, creator, created) in rows {
-            if let Some(tx_hash) = tx_hash {
-                let tx_status = get_tx_status(&ckb_client, &tx_hash).await;
+        for row in rows {
+            if let Some(tx_hash) = &row.tx_hash {
+                let tx_status = get_tx_status(&ckb_client, tx_hash).await;
                 if let Ok(tx_status) = tx_status {
-                    debug!("VoteMeta({id}) tx {tx_hash} status: {tx_status:?}");
+                    debug!("VoteMeta({}) tx {tx_hash} status: {tx_status:?}", row.id);
                     let meta_state = match tx_status {
-                        ckb_jsonrpc_types::Status::Committed => VoteMetaState::Committed,
+                        ckb_jsonrpc_types::Status::Committed => {
+                            let proposal_hash = ckb_hash::blake2b_256(
+                                serde_json::to_vec(&row.proposal_uri).unwrap(),
+                            );
+                            if let Ok(vote_meta) =
+                                vote::build_vote_meta(&db, &row, &proposal_hash).await
+                            {
+                                let vote_meta_bytes = vote_meta.as_bytes().to_vec();
+
+                                let t = ckb_client
+                                    .get_transaction(ckb_types::H256(
+                                        hex::decode(tx_hash).unwrap().try_into().unwrap(),
+                                    ))
+                                    .await
+                                    .map(|t| {
+                                        t.and_then(|t| {
+                                            t.transaction.and_then(|t| {
+                                                if let ckb_jsonrpc_types::Either::Left(tx) = t.inner
+                                                {
+                                                    Some(tx)
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                        })
+                                    });
+                                if let Ok(Some(tx)) = t {
+                                    if tx.inner.outputs_data[0].as_bytes() == vote_meta_bytes {
+                                        VoteMetaState::Committed
+                                    } else {
+                                        VoteMetaState::Changed
+                                    }
+                                } else {
+                                    VoteMetaState::Changed
+                                }
+                            } else {
+                                VoteMetaState::Changed
+                            }
+                        }
                         ckb_jsonrpc_types::Status::Pending => continue,
                         ckb_jsonrpc_types::Status::Proposed => continue,
                         ckb_jsonrpc_types::Status::Unknown => {
-                            if (chrono::Local::now() - created) > chrono::Duration::minutes(3) {
+                            if (chrono::Local::now() - row.created) > chrono::Duration::minutes(3) {
                                 VoteMetaState::Timeout
                             } else {
                                 continue;
@@ -90,46 +119,92 @@ pub async fn check_vote_meta_tx(
                     let (sql, values) = sea_query::Query::update()
                         .table(VoteMeta::Table)
                         .value(VoteMeta::State, meta_state as i32)
-                        .and_where(Expr::col(VoteMeta::Id).eq(id))
+                        .and_where(Expr::col(VoteMeta::Id).eq(row.id))
                         .build_sqlx(PostgresQueryBuilder);
                     sqlx::query_with(&sql, values).execute(&db).await.ok();
-                    debug!("VoteMeta({}) tx {} marked as {:?}", id, tx_hash, meta_state);
+                    debug!(
+                        "VoteMeta({}) tx {} marked as {:?}",
+                        row.id, tx_hash, meta_state
+                    );
 
-                    if meta_state == VoteMetaState::Committed {
-                        // update proposal state
-                        let lines = Proposal::update_state(&db, &proposal_uri, proposal_state)
+                    match meta_state {
+                        VoteMetaState::Committed => {
+                            // update proposal state
+                            let lines =
+                                Proposal::update_state(&db, &row.proposal_uri, row.proposal_state)
+                                    .await
+                                    .map_err(|e| error!("update proposal state failed: {e}"))
+                                    .unwrap_or(0);
+                            if lines > 0 {
+                                debug!(
+                                    "Proposal({}) marked as {:?}",
+                                    row.proposal_uri,
+                                    ProposalState::from(row.proposal_state)
+                                );
+                                let timeline_type = match ProposalState::from(row.proposal_state) {
+                                    ProposalState::InitiationVote => TimelineType::InitiationVote,
+                                    ProposalState::MilestoneVote => TimelineType::MilestoneVote,
+                                    ProposalState::DelayVote => TimelineType::DelayVote,
+                                    ProposalState::ReexamineVote => TimelineType::ReexamineVote,
+                                    ProposalState::RectificationVote => {
+                                        TimelineType::RectificationVote
+                                    }
+                                    _ => continue,
+                                };
+
+                                Timeline::insert(
+                                    &db,
+                                    &TimelineRow {
+                                        id: 0,
+                                        timeline_type: timeline_type as i32,
+                                        message: format!("{timeline_type:?}"),
+                                        target: row.proposal_uri.clone(),
+                                        operator: row.creator.clone(),
+                                        timestamp: chrono::Local::now(),
+                                    },
+                                )
+                                .await
+                                .map_err(|e| error!("insert timeline failed: {e}"))
+                                .ok();
+                            }
+                        }
+                        VoteMetaState::Changed => {
+                            error!("VoteMeta({}) tx {} output data changed", row.id, tx_hash);
+                            let lines = Proposal::update_state(
+                                &db,
+                                &row.proposal_uri,
+                                ProposalState::End as i32,
+                            )
                             .await
                             .map_err(|e| error!("update proposal state failed: {e}"))
                             .unwrap_or(0);
-                        if lines > 0 {
-                            debug!(
-                                "Proposal({proposal_uri}) marked as {:?}",
-                                ProposalState::from(proposal_state)
-                            );
-                            let timeline_type = match ProposalState::from(proposal_state) {
-                                ProposalState::InitiationVote => TimelineType::InitiationVote,
-                                ProposalState::MilestoneVote => TimelineType::MilestoneVote,
-                                ProposalState::DelayVote => TimelineType::DelayVote,
-                                ProposalState::ReexamineVote => TimelineType::ReexamineVote,
-                                ProposalState::RectificationVote => TimelineType::RectificationVote,
-                                _ => continue,
-                            };
+                            if lines > 0 {
+                                debug!(
+                                    "Proposal({}) marked as {:?}",
+                                    row.proposal_uri,
+                                    ProposalState::End
+                                );
 
-                            Timeline::insert(
-                                &db,
-                                &TimelineRow {
-                                    id: 0,
-                                    timeline_type: timeline_type as i32,
-                                    message: format!("{timeline_type:?}"),
-                                    target: proposal_uri.clone(),
-                                    operator: creator,
-                                    timestamp: chrono::Local::now(),
-                                },
-                            )
-                            .await
-                            .map_err(|e| error!("insert timeline failed: {e}"))
-                            .ok();
+                                Timeline::insert(
+                                    &db,
+                                    &TimelineRow {
+                                        id: 0,
+                                        timeline_type: TimelineType::VoteMetaTxChanged as i32,
+                                        message: format!(
+                                            "VoteMeta({}) tx {} output data changed",
+                                            row.id, tx_hash
+                                        ),
+                                        target: row.proposal_uri.clone(),
+                                        operator: row.creator.clone(),
+                                        timestamp: chrono::Local::now(),
+                                    },
+                                )
+                                .await
+                                .map_err(|e| error!("insert timeline failed: {e}"))
+                                .ok();
+                            }
                         }
+                        _ => (),
                     }
                 }
             }

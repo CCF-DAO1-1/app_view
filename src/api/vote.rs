@@ -279,7 +279,7 @@ pub async fn create_vote_meta(
         vote_meta_row
     };
 
-    let vote_meta = build_vote_meta(&state, &vote_meta_row, &proposal_hash).await?;
+    let vote_meta = build_vote_meta(&state.db, &vote_meta_row, &proposal_hash).await?;
 
     let vote_meta_bytes = vote_meta.as_bytes().to_vec();
     let vote_meta_hex = hex::encode(vote_meta_bytes);
@@ -703,7 +703,7 @@ fn test_unsigned_bytes() {
 }
 
 pub async fn build_vote_meta(
-    state: &AppView,
+    db: &sqlx::Pool<sqlx::Postgres>,
     vote_meta_row: &VoteMetaRow,
     proposal_hash: &[u8],
 ) -> Result<molecules::VoteMeta> {
@@ -711,9 +711,8 @@ pub async fn build_vote_meta(
         .and_where(Expr::col(VoteWhitelist::Id).eq(vote_meta_row.whitelist_id.clone()))
         .build_sqlx(PostgresQueryBuilder);
 
-    let vote_whitelist_row: VoteWhitelistRow = query_as_with(&sql, values.clone())
-        .fetch_one(&state.db)
-        .await?;
+    let vote_whitelist_row: VoteWhitelistRow =
+        query_as_with(&sql, values.clone()).fetch_one(db).await?;
 
     let mut smt_tree = CkbSMT::default();
     for lock_hash in vote_whitelist_row.list.iter() {

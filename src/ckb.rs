@@ -342,7 +342,7 @@ async fn get_live_cell() {
         .get_live_cell(
             ckb_jsonrpc_types::OutPoint {
                 tx_hash: ckb_types::H256(
-                    hex::decode("db189a3e2106f7a1b0373d6365571bae14c9af17d0d21290a47d428f570ad0a7")
+                    hex::decode("3071bec564eafa4eb981f56e028e65216af04a788ddbbc93cc2a2d625235b22a")
                         .unwrap()
                         .try_into()
                         .unwrap(),
@@ -354,6 +354,31 @@ async fn get_live_cell() {
         .await
         .unwrap();
     println!("{:?}", r);
+}
+
+#[tokio::test]
+async fn get_tx() {
+    let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");
+
+    let t = ckb_client
+        .get_transaction(ckb_types::H256(
+            hex::decode("3071bec564eafa4eb981f56e028e65216af04a788ddbbc93cc2a2d625235b22a")
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    match t.unwrap().transaction.unwrap().inner {
+        ckb_jsonrpc_types::Either::Left(tx) => {
+            tx.inner.outputs_data.iter().for_each(|d| {
+                println!("{:?}", d);
+            });
+        }
+        ckb_jsonrpc_types::Either::Right(bytes) => {
+            println!("tx bytes: {:?}", bytes);
+        }
+    };
 }
 
 #[tokio::test]
