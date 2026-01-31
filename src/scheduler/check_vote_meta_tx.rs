@@ -7,7 +7,6 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use crate::{
     AppView,
     api::vote,
-    ckb::get_tx_status,
     lexicon::{
         proposal::{Proposal, ProposalState},
         timeline::{Timeline, TimelineRow, TimelineType},
@@ -62,10 +61,30 @@ pub async fn check_vote_meta_tx(
     if let Some(rows) = rows {
         for row in rows {
             if let Some(tx_hash) = &row.tx_hash {
-                let tx_status = get_tx_status(&ckb_client, tx_hash).await;
-                if let Ok(tx_status) = tx_status {
+                let tx = ckb_client
+                    .get_transaction(ckb_types::H256(
+                        hex::decode(tx_hash.strip_prefix("0x").unwrap_or(tx_hash))
+                            .unwrap()
+                            .try_into()
+                            .unwrap(),
+                    ))
+                    .await;
+                if let Ok(Some((tx_status, tx))) = tx.map(|t| {
+                    t.map(|t| {
+                        (
+                            t.tx_status,
+                            t.transaction.and_then(|t| {
+                                if let ckb_jsonrpc_types::Either::Left(tx) = t.inner {
+                                    Some(tx)
+                                } else {
+                                    None
+                                }
+                            }),
+                        )
+                    })
+                }) {
                     debug!("VoteMeta({}) tx {tx_hash} status: {tx_status:?}", row.id);
-                    let meta_state = match tx_status {
+                    let meta_state = match tx_status.status {
                         ckb_jsonrpc_types::Status::Committed => {
                             let proposal_hash = ckb_hash::blake2b_256(
                                 serde_json::to_vec(&row.proposal_uri).unwrap(),
@@ -75,24 +94,7 @@ pub async fn check_vote_meta_tx(
                             {
                                 let vote_meta_bytes = vote_meta.as_bytes().to_vec();
 
-                                let t = ckb_client
-                                    .get_transaction(ckb_types::H256(
-                                        hex::decode(tx_hash).unwrap().try_into().unwrap(),
-                                    ))
-                                    .await
-                                    .map(|t| {
-                                        t.and_then(|t| {
-                                            t.transaction.and_then(|t| {
-                                                if let ckb_jsonrpc_types::Either::Left(tx) = t.inner
-                                                {
-                                                    Some(tx)
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                        })
-                                    });
-                                if let Ok(Some(tx)) = t {
+                                if let Some(tx) = tx {
                                     if tx.inner.outputs_data[0].as_bytes() == vote_meta_bytes {
                                         VoteMetaState::Committed
                                     } else {
