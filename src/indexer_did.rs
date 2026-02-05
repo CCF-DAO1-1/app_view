@@ -16,8 +16,7 @@ pub async fn did_document(url: &str, did: &str) -> Result<Value> {
         .map_err(|e| eyre!("decode indexer response failed: {e}"))
 }
 
-#[allow(dead_code)]
-pub async fn ckb_did(url: &str, ckb_addr: &str) -> Result<String> {
+pub async fn ckb_did(url: &str, ckb_addr: &str) -> Result<Vec<String>> {
     reqwest::Client::new()
         .get(format!("{url}/resolve-ckb-addr/{ckb_addr}"))
         .header("Content-Type", "application/json; charset=utf-8")
@@ -25,7 +24,7 @@ pub async fn ckb_did(url: &str, ckb_addr: &str) -> Result<String> {
         .send()
         .await
         .map_err(|e| eyre!("call indexer failed: {e}"))?
-        .text()
+        .json::<Vec<String>>()
         .await
         .map_err(|e| eyre!("decode indexer response failed: {e}"))
 }

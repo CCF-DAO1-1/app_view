@@ -192,9 +192,17 @@ pub struct VoteResults {
     pub valid_vote_sum: u64,
     pub weight_sum: u64,
     pub valid_weight_sum: u64,
-    pub valid_votes: Vec<Vec<(String, u64)>>,
+    pub valid_votes: Vec<Vec<VoteView>>,
     pub candidate_votes: Vec<u64>,
     pub result: Option<VoteResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VoteView {
+    pub author: Value,
+    pub ckb_addr: String,
+    pub weight: u64,
+    pub vote_index: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]

@@ -16,7 +16,7 @@ use crate::{
         proposal::{Proposal, ProposalSample, ProposalState},
         task::{Task, TaskRow, TaskState, TaskType},
         timeline::{Timeline, TimelineRow, TimelineType},
-        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteResult, VoteResults},
+        vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState, VoteResult, VoteResults, VoteView},
     },
 };
 
@@ -24,12 +24,9 @@ pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<
     let app = app.clone();
     let mut job = Job::new_async(cron, move |_uuid, _scheduler| {
         Box::pin({
-            let db = app.db.clone();
-            let ckb_client = app.ckb_client.clone();
-            let indexer_bind_url = app.indexer_bind_url.clone();
-            let indexer_vote_url = app.indexer_vote_url.clone();
+            let app = app.clone();
             async move {
-                check_vote_meta_finished(db, indexer_bind_url, indexer_vote_url, ckb_client)
+                check_vote_meta_finished(app)
                     .await
                     .map_err(|e| error!("job run failed: {e}"))
                     .ok();
@@ -52,26 +49,28 @@ pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<
     Ok(job)
 }
 
-pub async fn check_vote_meta_finished(
-    db: sqlx::Pool<sqlx::Postgres>,
-    indexer_bind_url: String,
-    indexer_vote_url: String,
-    ckb_client: ckb_sdk::CkbRpcAsyncClient,
-) -> Result<()> {
+pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
     let (sql, values) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::State).eq(VoteMetaState::Committed as i32))
         .build_sqlx(PostgresQueryBuilder);
 
     let rows: Vec<VoteMetaRow> = sqlx::query_as_with(&sql, values.clone())
-        .fetch_all(&db)
+        .fetch_all(&state.db)
         .await
         .map_err(|e| {
             error!("{e}");
             e
         })
         .unwrap_or_default();
-    let bn: u64 = ckb_client.get_tip_block_number().await?.into();
-    let current_epoch = ckb_client.get_current_epoch().await?;
+    let bn: u64 = state.ckb_client.get_tip_block_number().await?.into();
+    let current_epoch = state.ckb_client.get_current_epoch().await?;
+    let current_epoch_number: u64 = current_epoch.number.into();
+    let current_epoch_length: u64 = current_epoch.length.into();
+    let current_epoch_index: u64 = bn - Into::<u64>::into(current_epoch.start_number);
+    debug!(
+        "start check vote_meta finished, current epoch: {}, length: {}, index: {}",
+        current_epoch_number, current_epoch_length, current_epoch_index
+    );
 
     for VoteMetaRow {
         id,
@@ -85,12 +84,9 @@ pub async fn check_vote_meta_finished(
     } in rows
     {
         let end_time = EpochNumberWithFraction::from_full_value(end_time as u64);
-        let current_epoch_number: u64 = current_epoch.number.into();
-        let current_epoch_length: u64 = current_epoch.length.into();
-        let current_epoch_index: u64 = bn - Into::<u64>::into(current_epoch.start_number);
         debug!(
             "check vote_meta id: {}, proposal_state: {}, end_time: {}",
-            id, proposal_state, end_time
+            id, proposal_state, end_time,
         );
         if end_time.number() > current_epoch_number
             || (end_time.number() == current_epoch_number
@@ -117,7 +113,7 @@ pub async fn check_vote_meta_finished(
         debug!("args: {}", args);
 
         let vote_result = all_votes(
-            &indexer_vote_url,
+            &state.indexer_vote_url,
             &args,
             end_time.number() as i64,
             end_time.index() as i64,
@@ -145,9 +141,13 @@ pub async fn check_vote_meta_finished(
                 .first()
                 .and_then(|i| i.as_i64())
                 .ok_or_eyre("vote_index not found")?;
-            let weight = crate::indexer_bind::get_weight(&ckb_client, &indexer_bind_url, ckb_addr)
-                .await
-                .unwrap_or(0);
+            let weight = crate::indexer_bind::get_weight(
+                &state.ckb_client,
+                &state.indexer_bind_url,
+                ckb_addr,
+            )
+            .await
+            .unwrap_or(0);
 
             weight_sum += weight;
             if let Some(candidate_vote) = candidate_votes.get_mut(vote_index as usize) {
@@ -156,7 +156,19 @@ pub async fn check_vote_meta_finished(
                 *candidate_vote += weight;
             }
             if let Some(valid_vote) = valid_votes.get_mut(vote_index as usize) {
-                valid_vote.push((ckb_addr.to_string(), weight));
+                let did = crate::indexer_did::ckb_did(&state.indexer_did_url, ckb_addr)
+                    .await
+                    .unwrap_or_default()
+                    .first()
+                    .cloned()
+                    .unwrap_or_default();
+                let author = crate::api::build_author(&state, &format!("did:ckb:{did}")).await;
+                valid_vote.push(VoteView {
+                    ckb_addr: ckb_addr.to_string(),
+                    weight,
+                    vote_index: vote_index as usize,
+                    author,
+                });
             }
         }
 
@@ -173,7 +185,8 @@ pub async fn check_vote_meta_finished(
         let (sql, value) = Proposal::build_sample()
             .and_where(Expr::col(Proposal::Uri).eq(proposal_uri.clone()))
             .build_sqlx(PostgresQueryBuilder);
-        let proposal_sample: ProposalSample = query_as_with(&sql, value).fetch_one(&db).await?;
+        let proposal_sample: ProposalSample =
+            query_as_with(&sql, value).fetch_one(&state.db).await?;
         debug!("proposal_sample: {:?}", proposal_sample);
         let proposal_type = proposal_sample
             .record
@@ -189,7 +202,7 @@ pub async fn check_vote_meta_finished(
         vote_results.result = Some(vote_result.clone());
         debug!("vote_result: {:?}", vote_results);
         // update vote_meta state
-        VoteMeta::update_results(&db, id, json!(vote_results)).await?;
+        VoteMeta::update_results(&state.db, id, json!(vote_results)).await?;
 
         debug!(
             "vote_meta id: {} finished with result: {:?}",
@@ -200,19 +213,19 @@ pub async fn check_vote_meta_finished(
             VoteResult::Agree => match ProposalState::from(proposal_state) {
                 ProposalState::InitiationVote => {
                     Proposal::update_state(
-                        &db,
+                        &state.db,
                         &proposal_uri,
                         ProposalState::WaitingForStartFund as i32,
                     )
                     .await?;
 
-                    let admins = Administrator::fetch_all(&db)
+                    let admins = Administrator::fetch_all(&state.db)
                         .await
                         .iter()
                         .map(|admin| admin.did.clone())
                         .collect();
                     Task::insert(
-                        &db,
+                        &state.db,
                         &TaskRow {
                             id: 0,
                             task_type: TaskType::UpdateReceiverAddr as i32,
@@ -230,22 +243,27 @@ pub async fn check_vote_meta_finished(
                     .map_err(|e| error!("insert task failed: {e}"))
                     .ok();
 
-                    Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
+                    Task::complete(&state.db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
                         .await
                         .ok();
-                    Task::complete(&db, &proposal_uri, TaskType::SubmitAMAReport, "SYSTEM")
-                        .await
-                        .ok();
+                    Task::complete(
+                        &state.db,
+                        &proposal_uri,
+                        TaskType::SubmitAMAReport,
+                        "SYSTEM",
+                    )
+                    .await
+                    .ok();
                 }
                 ProposalState::MilestoneVote => {
                     Proposal::update_state(
-                        &db,
+                        &state.db,
                         &proposal_uri,
                         ProposalState::WaitingForMilestoneFund as i32,
                     )
                     .await?;
 
-                    let admins = Administrator::fetch_all(&db)
+                    let admins = Administrator::fetch_all(&state.db)
                         .await
                         .iter()
                         .map(|admin| admin.did.clone())
@@ -256,7 +274,7 @@ pub async fn check_vote_meta_finished(
                         .and_then(|m| m.as_array())
                         .and_then(|ms| ms.get(proposal_sample.progress as usize));
                     Task::insert(
-                        &db,
+                        &state.db,
                         &TaskRow {
                             id: 0,
                             task_type: TaskType::SendMilestoneFund as i32,
@@ -277,15 +295,19 @@ pub async fn check_vote_meta_finished(
                     .ok();
                 }
                 ProposalState::DelayVote => {
-                    Proposal::update_state(&db, &proposal_uri, ProposalState::InProgress as i32)
-                        .await?;
-                    let admins: Vec<String> = Administrator::fetch_all(&db)
+                    Proposal::update_state(
+                        &state.db,
+                        &proposal_uri,
+                        ProposalState::InProgress as i32,
+                    )
+                    .await?;
+                    let admins: Vec<String> = Administrator::fetch_all(&state.db)
                         .await
                         .iter()
                         .map(|admin| admin.did.clone())
                         .collect();
                     Task::insert(
-                        &db,
+                        &state.db,
                         &TaskRow {
                             id: 0,
                             task_type: TaskType::SubmitMilestoneReport as i32,
@@ -303,7 +325,7 @@ pub async fn check_vote_meta_finished(
                     .map_err(|e| error!("insert task failed: {e}"))
                     .ok();
                     Task::insert(
-                        &db,
+                        &state.db,
                         &TaskRow {
                             id: 0,
                             task_type: TaskType::SubmitDelayReport as i32,
@@ -323,18 +345,18 @@ pub async fn check_vote_meta_finished(
                 }
                 ProposalState::ReexamineVote | ProposalState::RectificationVote => {
                     Proposal::update_state(
-                        &db,
+                        &state.db,
                         &proposal_uri,
                         ProposalState::WaitingRectification as i32,
                     )
                     .await?;
-                    let admins = Administrator::fetch_all(&db)
+                    let admins = Administrator::fetch_all(&state.db)
                         .await
                         .iter()
                         .map(|admin| admin.did.clone())
                         .collect();
                     Task::insert(
-                        &db,
+                        &state.db,
                         &TaskRow {
                             id: 0,
                             task_type: TaskType::Rectification as i32,
@@ -358,19 +380,19 @@ pub async fn check_vote_meta_finished(
                 match ProposalState::from(proposal_state) {
                     ProposalState::MilestoneVote | ProposalState::DelayVote => {
                         Proposal::update_state(
-                            &db,
+                            &state.db,
                             &proposal_uri,
                             ProposalState::WaitingReexamine as i32,
                         )
                         .await?;
 
-                        let admins = Administrator::fetch_all(&db)
+                        let admins = Administrator::fetch_all(&state.db)
                             .await
                             .iter()
                             .map(|admin| admin.did.clone())
                             .collect();
                         Task::insert(
-                            &db,
+                            &state.db,
                             &TaskRow {
                                 id: 0,
                                 task_type: TaskType::CreateReexamineMeeting as i32,
@@ -389,16 +411,21 @@ pub async fn check_vote_meta_finished(
                         .ok();
 
                         Task::complete(
-                            &db,
+                            &state.db,
                             &proposal_uri,
                             TaskType::SubmitMilestoneReport,
                             "SYSTEM",
                         )
                         .await
                         .ok();
-                        Task::complete(&db, &proposal_uri, TaskType::SubmitDelayReport, "SYSTEM")
-                            .await
-                            .ok();
+                        Task::complete(
+                            &state.db,
+                            &proposal_uri,
+                            TaskType::SubmitDelayReport,
+                            "SYSTEM",
+                        )
+                        .await
+                        .ok();
                     }
                     _ => {}
                 }
@@ -406,21 +433,26 @@ pub async fn check_vote_meta_finished(
             VoteResult::AgreeLessThan51PCT | VoteResult::AgreeLessThan67PCT => {
                 match ProposalState::from(proposal_state) {
                     ProposalState::InitiationVote => {
-                        Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32)
+                        Proposal::update_state(&state.db, &proposal_uri, ProposalState::End as i32)
                             .await?;
-                        Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
+                        Task::complete(&state.db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
                             .await
                             .ok();
-                        Task::complete(&db, &proposal_uri, TaskType::SubmitAMAReport, "SYSTEM")
-                            .await
-                            .ok();
+                        Task::complete(
+                            &state.db,
+                            &proposal_uri,
+                            TaskType::SubmitAMAReport,
+                            "SYSTEM",
+                        )
+                        .await
+                        .ok();
                     }
                     ProposalState::ReexamineVote => {
-                        Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32)
+                        Proposal::update_state(&state.db, &proposal_uri, ProposalState::End as i32)
                             .await?;
                     }
                     ProposalState::RectificationVote => {
-                        Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32)
+                        Proposal::update_state(&state.db, &proposal_uri, ProposalState::End as i32)
                             .await?;
                     }
                     _ => {}
@@ -429,23 +461,28 @@ pub async fn check_vote_meta_finished(
             VoteResult::TotalLessThan185000000CKB | VoteResult::TotalLessThan3X => {
                 match ProposalState::from(proposal_state) {
                     ProposalState::InitiationVote => {
-                        Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32)
+                        Proposal::update_state(&state.db, &proposal_uri, ProposalState::End as i32)
                             .await?;
-                        Task::complete(&db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
+                        Task::complete(&state.db, &proposal_uri, TaskType::CreateAMA, "SYSTEM")
                             .await
                             .ok();
-                        Task::complete(&db, &proposal_uri, TaskType::SubmitAMAReport, "SYSTEM")
-                            .await
-                            .ok();
+                        Task::complete(
+                            &state.db,
+                            &proposal_uri,
+                            TaskType::SubmitAMAReport,
+                            "SYSTEM",
+                        )
+                        .await
+                        .ok();
                     }
                     ProposalState::ReexamineVote => {
-                        let admins = Administrator::fetch_all(&db)
+                        let admins = Administrator::fetch_all(&state.db)
                             .await
                             .iter()
                             .map(|admin| admin.did.clone())
                             .collect();
                         Task::insert(
-                            &db,
+                            &state.db,
                             &TaskRow {
                                 id: 0,
                                 task_type: TaskType::RectificationVote as i32,
@@ -464,7 +501,7 @@ pub async fn check_vote_meta_finished(
                         .ok();
                     }
                     ProposalState::RectificationVote => {
-                        Proposal::update_state(&db, &proposal_uri, ProposalState::End as i32)
+                        Proposal::update_state(&state.db, &proposal_uri, ProposalState::End as i32)
                             .await?;
                     }
                     _ => {}
@@ -474,7 +511,7 @@ pub async fn check_vote_meta_finished(
         }
 
         Timeline::insert(
-            &db,
+            &state.db,
             &TimelineRow {
                 id: 0,
                 timeline_type: TimelineType::VoteFinished as i32,
