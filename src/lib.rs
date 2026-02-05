@@ -16,6 +16,7 @@ pub mod molecules;
 pub mod scheduler;
 pub mod smt;
 pub mod tid;
+pub mod relayer;
 
 #[macro_use]
 extern crate tracing as logger;

@@ -17,6 +17,7 @@ use dao::lexicon::timeline::Timeline;
 use dao::lexicon::vote::Vote;
 use dao::lexicon::vote_meta::VoteMeta;
 use dao::lexicon::vote_whitelist::VoteWhitelist;
+use dao::relayer::subscription::RepoSubscription;
 use dao::{AppView, api, scheduler};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
@@ -45,6 +46,8 @@ pub struct Args {
     indexer_did_url: String,
     #[clap(short, long)]
     indexer_vote_url: String,
+    #[clap(short, long)]
+    relayer: String,
     #[clap(short, long)]
     pds: String,
     #[clap(short, long, default_value = "")]
@@ -98,6 +101,23 @@ async fn main() -> Result<()> {
             })
             .collect(),
     };
+
+    // reconnect
+    let app_ = app.clone();
+    let relayer = args.relayer.clone();
+    tokio::spawn(async move {
+        loop {
+            match RepoSubscription::new(&relayer).await {
+                Ok(mut sub) => match sub.run(app_.clone()).await {
+                    Ok(_) => info!("Subscription ended successfully."),
+                    Err(e) => error!("{e}"),
+                },
+                Err(e) => error!("{e}"),
+            }
+            info!("Reconnecting in 1 seconds...");
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+    });
 
     scheduler::init_task_scheduler(&app).await?;
 
