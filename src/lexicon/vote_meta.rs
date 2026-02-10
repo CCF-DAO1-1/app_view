@@ -194,7 +194,7 @@ pub struct VoteResults {
     pub valid_weight_sum: u64,
     pub valid_votes: Vec<Vec<VoteView>>,
     pub candidate_votes: Vec<u64>,
-    pub result: Option<VoteResult>,
+    pub result: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

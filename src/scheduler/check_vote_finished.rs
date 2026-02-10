@@ -199,7 +199,7 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
             vote_results.clone(),
             proposal_type,
         );
-        vote_results.result = Some(vote_result.clone());
+        vote_results.result = Some(vote_result.clone() as u32);
         debug!("vote_result: {:?}", vote_results);
         // update vote_meta state
         VoteMeta::update_results(&state.db, id, json!(vote_results)).await?;
