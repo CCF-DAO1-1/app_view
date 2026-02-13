@@ -335,10 +335,7 @@ pub async fn detail(
     let row: ProposalRow = query_as_with(&sql, values.clone())
         .fetch_one(&state.db)
         .await
-        .map_err(|e| {
-            debug!("exec sql failed: {e}");
-            AppError::ExecSqlFailed(e.to_string())
-        })?;
+        .map_err(|_| AppError::NotFound)?;
     let (sql, value) = VoteMeta::build_select()
         .and_where(Expr::col(VoteMeta::ProposalUri).eq(&row.uri))
         .and_where_option(if row.state != ProposalState::End as i32 {

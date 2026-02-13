@@ -62,6 +62,9 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
             e
         })
         .unwrap_or_default();
+    if rows.is_empty() {
+        return Ok(());
+    }
     let bn: u64 = state.ckb_client.get_tip_block_number().await?.into();
     let current_epoch = state.ckb_client.get_current_epoch().await?;
     let current_epoch_number: u64 = current_epoch.number.into();
