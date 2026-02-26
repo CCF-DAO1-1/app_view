@@ -15,8 +15,9 @@ pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<
         Box::pin({
             let db = app.db.clone();
             let ckb_client = app.ckb_client.clone();
+            let ckb_net = app.ckb_net;
             async move {
-                build_vote_whitelist(db, ckb_client).await;
+                build_vote_whitelist(db, ckb_client, ckb_net).await;
             }
         })
     })?;
@@ -39,6 +40,7 @@ pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<
 pub async fn build_vote_whitelist(
     db: sqlx::Pool<sqlx::Postgres>,
     ckb_client: ckb_sdk::CkbRpcAsyncClient,
+    ckb_net: ckb_sdk::NetworkType,
 ) {
     let (sql, values) = sea_query::Query::select()
         .columns([(Profile::Table, Profile::Did)])
@@ -52,8 +54,8 @@ pub async fn build_vote_whitelist(
     let mut vote_whitelist = vec![];
     let mut smt_tree = CkbSMT::default();
     for did in did_list {
-        if let Ok(ckb_addr) = ckb::get_ckb_addr_by_did(&ckb_client, &did).await
-            && let Ok(deposit) = ckb::get_nervos_dao_deposit(&ckb_client, &ckb_addr).await
+        if let Ok(ckb_addr) = ckb::get_ckb_addr_by_did(&ckb_client, &ckb_net, &did).await
+            && let Ok(deposit) = ckb::get_nervos_dao_deposit(&ckb_client, ckb_net, &ckb_addr).await
         {
             if deposit > 0 {
                 info!(
@@ -61,7 +63,7 @@ pub async fn build_vote_whitelist(
                     did, ckb_addr, deposit
                 );
                 let address = crate::AddressParser::default()
-                    .set_network(ckb_sdk::NetworkType::Testnet)
+                    .set_network(ckb_net)
                     .parse(&ckb_addr)
                     .unwrap();
                 let lock_script = ckb_types::packed::Script::from(address.payload());

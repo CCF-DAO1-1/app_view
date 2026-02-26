@@ -150,6 +150,7 @@ pub async fn build_author(state: &AppView, repo: &str) -> Value {
     author["did"] = Value::String(repo.to_owned());
     if let Ok(ckb_addr) = crate::ckb::get_ckb_addr_by_did(
         &state.ckb_client,
+        &state.ckb_net,
         repo.strip_prefix("did:web5")
             .unwrap_or(repo)
             .strip_prefix("did:ckb")

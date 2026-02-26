@@ -58,6 +58,7 @@ pub async fn bind_list(
 
     let ckb_addr = crate::ckb::get_ckb_addr_by_did(
         &state.ckb_client,
+        &state.ckb_net,
         query
             .did
             .strip_prefix("did:web5")
@@ -85,6 +86,7 @@ pub async fn weight(
 
     let weight = crate::indexer_bind::get_weight(
         &state.ckb_client,
+        state.ckb_net,
         &state.indexer_bind_url,
         &query.ckb_addr,
     )
@@ -162,7 +164,7 @@ async fn get_proof(
     let smt_root_hash: H256 = *smt_tree.root();
 
     let address = crate::AddressParser::default()
-        .set_network(ckb_sdk::NetworkType::Testnet)
+        .set_network(state.ckb_net)
         .parse(ckb_addr)
         .map_err(|e| eyre!(e))?;
     let lock_script = ckb_types::packed::Script::from(address.payload());
@@ -198,6 +200,7 @@ pub async fn build_whitelist(State(state): State<AppView>) -> Result<impl IntoRe
         crate::scheduler::build_vote_whitelist::build_vote_whitelist(
             state.db.clone(),
             state.ckb_client.clone(),
+            state.ckb_net,
         ),
     );
     Ok(ok_simple())
@@ -435,9 +438,9 @@ pub async fn _create_vote(
         .map_err(|e| AppError::ValidateFailed(format!("not vote_meta: {e}")))?;
 
     // TODO build vote row tx
-    let vote_addr = get_ckb_addr_by_did(&state.ckb_client, &body.did).await?;
+    let vote_addr = get_ckb_addr_by_did(&state.ckb_client, &state.ckb_net, &body.did).await?;
     let address = crate::AddressParser::default()
-        .set_network(ckb_sdk::NetworkType::Testnet)
+        .set_network(state.ckb_net)
         .parse(&vote_addr)
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
     let lock_script = ckb_types::packed::Script::from(address.payload());
@@ -488,7 +491,7 @@ pub async fn prepare(
         )));
     }
 
-    let vote_addr = get_ckb_addr_by_did(&state.ckb_client, &body.did).await?;
+    let vote_addr = get_ckb_addr_by_did(&state.ckb_client, &state.ckb_net, &body.did).await?;
 
     let proof = get_proof(&state, &vote_meta_row.whitelist_id, &vote_addr).await?;
 
@@ -566,7 +569,13 @@ pub async fn detail(
     }
 
     let votes = if let Some(tx_hash) = &vote_meta_row.tx_hash {
-        get_vote_result(&state.ckb_client, &state.indexer_bind_url, tx_hash).await?
+        get_vote_result(
+            &state.ckb_client,
+            state.ckb_net,
+            &state.indexer_bind_url,
+            tx_hash,
+        )
+        .await?
     } else {
         return Err(AppError::ValidateFailed(
             "vote_meta have not tx_hash".to_string(),

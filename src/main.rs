@@ -54,6 +54,8 @@ pub struct Args {
     whitelist: String,
     #[clap(short, long, default_value = "false")]
     apidoc: bool,
+    #[clap(short, long, default_value = "Testnet")]
+    ckb_net: String,
 }
 
 #[tokio::main]
@@ -89,6 +91,15 @@ async fn main() -> Result<()> {
         indexer_did_url: args.indexer_did_url.clone(),
         indexer_vote_url: args.indexer_vote_url.clone(),
         ckb_client,
+        ckb_net: match args.ckb_net.to_lowercase().as_str() {
+            "mainnet" => ckb_sdk::NetworkType::Mainnet,
+            "testnet" => ckb_sdk::NetworkType::Testnet,
+            "dev" => ckb_sdk::NetworkType::Dev,
+            _ => {
+                error!("Invalid ckb_net, default to Testnet");
+                ckb_sdk::NetworkType::Testnet
+            }
+        },
         whitelist: args
             .whitelist
             .split(',')

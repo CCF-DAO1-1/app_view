@@ -146,6 +146,7 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
                 .ok_or_eyre("vote_index not found")?;
             let weight = crate::indexer_bind::get_weight(
                 &state.ckb_client,
+                state.ckb_net,
                 &state.indexer_bind_url,
                 ckb_addr,
             )

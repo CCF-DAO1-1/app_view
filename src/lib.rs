@@ -29,6 +29,7 @@ pub struct AppView {
     pub indexer_did_url: String,
     pub indexer_vote_url: String,
     pub ckb_client: ckb_sdk::CkbRpcAsyncClient,
+    pub ckb_net: ckb_sdk::NetworkType,
     pub whitelist: Vec<String>,
 }
 
@@ -195,7 +196,11 @@ impl AddressParser {
             .ok_or_else(|| format!("Invalid address prefix: {}", prefix))?;
         let old_address = OldAddress::from_input(network, input)?;
         let payload = AddressPayload::from_pubkey_hash(old_address.hash().clone());
-        Ok(Address::new(NetworkType::Testnet, payload, true))
+        Ok(Address::new(
+            self.network.ok_or("Missing network")?,
+            payload,
+            true,
+        ))
     }
 }
 
