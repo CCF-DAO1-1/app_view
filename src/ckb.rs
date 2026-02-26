@@ -22,18 +22,17 @@ pub async fn get_nervos_dao_deposit(
         .parse(ckb_addr)
         .map_err(|e| eyre!(e))?;
     let lock_hash = ckb_types::packed::Script::from(address.payload());
-    let deposit_code_hash = match ckb_net {
-        NetworkType::Mainnet => "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
-        NetworkType::Testnet | NetworkType::Dev | NetworkType::Staging | NetworkType::Preview => {
-            "82d76d1b75fe2fd9a27dfbaa65a039221a380d76c926f378d3f81cf3e7e13f2e"
-        }
-    };
     let r = ckb_client
         .get_cells(
             ckb_sdk::rpc::ckb_indexer::SearchKey {
                 script: ckb_jsonrpc_types::Script {
                     code_hash: ckb_types::H256(
-                        hex::decode(deposit_code_hash).unwrap().try_into().unwrap(),
+                        hex::decode(
+                            "82d76d1b75fe2fd9a27dfbaa65a039221a380d76c926f378d3f81cf3e7e13f2e",
+                        )
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
                     ),
                     hash_type: ckb_jsonrpc_types::ScriptHashType::Type,
                     args: ckb_jsonrpc_types::JsonBytes::default(),
@@ -78,7 +77,7 @@ async fn pw_lock_capacity(
     let mut total_capacity = 0;
     let code_hash = lock.code_hash().as_slice().to_vec();
     let l_code_hash = match ckb_net {
-        NetworkType::Mainnet => "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        NetworkType::Mainnet => "9b819793a64463aed77c615d6cb226eea5487ccfc0783043a587254cda2b6f26",
         NetworkType::Testnet | NetworkType::Dev | NetworkType::Staging | NetworkType::Preview => {
             "f329effd1c475a2978453c8600e1eaf0bc2087ee093c3ee64cc96ec6847752cb"
         }
@@ -88,7 +87,7 @@ async fn pw_lock_capacity(
         if args.starts_with("12") {
             let pw_code_hash = match ckb_net {
                 NetworkType::Mainnet => {
-                    "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+                    "bf43c3602455798c1a61a596e0d95278864c552fafe231c063b3fabf97a8febc"
                 }
                 NetworkType::Testnet
                 | NetworkType::Dev
@@ -106,23 +105,12 @@ async fn pw_lock_capacity(
                 args: Bytes::from_owner(lock.args().raw_data()[1..21].to_vec()),
             };
             let address = Address::new(ckb_net, payload.clone(), true);
-            let deposit_code_hash = match ckb_net {
-                NetworkType::Mainnet => {
-                    "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
-                }
-                NetworkType::Testnet
-                | NetworkType::Dev
-                | NetworkType::Staging
-                | NetworkType::Preview => {
-                    "82d76d1b75fe2fd9a27dfbaa65a039221a380d76c926f378d3f81cf3e7e13f2e"
-                }
-            };
             let r = ckb_client
                 .get_cells(
                     ckb_sdk::rpc::ckb_indexer::SearchKey {
                         script: ckb_jsonrpc_types::Script {
                             code_hash: ckb_types::H256(
-                                hex::decode(deposit_code_hash).unwrap().try_into().unwrap(),
+                                hex::decode("82d76d1b75fe2fd9a27dfbaa65a039221a380d76c926f378d3f81cf3e7e13f2e").unwrap().try_into().unwrap(),
                             ),
                             hash_type: ckb_jsonrpc_types::ScriptHashType::Type,
                             args: ckb_jsonrpc_types::JsonBytes::default(),
@@ -227,7 +215,7 @@ pub async fn get_vote_result(
     let args = pubkey_hash[0..20].to_vec();
     let args = format!("0x{}", hex::encode(args));
     let vote_code_hash = match ckb_net {
-        NetworkType::Mainnet => "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        NetworkType::Mainnet => "0x38716b429cb139405d32ff86a916827862b2fa819916894848d8460da8953afb",
         NetworkType::Testnet | NetworkType::Dev | NetworkType::Staging | NetworkType::Preview => {
             "0xb140de2d7d1536cfdcb82da7520475edce5785dff90edae9073c1143d88f50c5"
         }
