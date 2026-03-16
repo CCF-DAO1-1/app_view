@@ -6,7 +6,6 @@ use common_x::restful::{
     ok,
 };
 use serde::Deserialize;
-use serde_json::Value;
 use utoipa::IntoParams;
 use validator::Validate;
 
@@ -29,10 +28,7 @@ pub async fn profile(
         .validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let mut author = build_author(&state, &query.repo).await;
-    if state.whitelist.is_empty() || state.whitelist.contains(&query.repo) {
-        author["highlight"] = Value::String("beta".to_owned());
-    }
+    let author = build_author(&state, &query.repo).await;
 
     Ok(ok(author))
 }

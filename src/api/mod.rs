@@ -1,7 +1,6 @@
 pub mod like;
 pub mod meeting;
 pub mod proposal;
-pub mod record;
 pub mod reply;
 pub mod repo;
 pub mod task;
@@ -38,13 +37,10 @@ use crate::{
 #[openapi(
     modifiers(&SecurityAddon),
     paths(
-        record::create,
-        record::update,
         repo::profile,
         proposal::list,
         proposal::detail,
         proposal::initiation_vote,
-        proposal::update_state,
         proposal::update_receiver_addr,
         proposal::receiver_addr,
         proposal::list_self,
@@ -56,7 +52,6 @@ use crate::{
         vote::weight,
         vote::whitelist,
         vote::proof,
-        vote::build_whitelist,
         vote::update_meta_tx_hash,
         vote::prepare,
         vote::update_vote_tx_hash,
@@ -76,7 +71,6 @@ use crate::{
         meeting::get,
     ),
     components(schemas(
-        record::NewRecord,
         proposal::ProposalQuery,
         SignedBody<proposal::InitiationParams>,
         SignedBody<proposal::ReceiverAddrParams>,
@@ -251,9 +245,7 @@ pub async fn create_vote_tx(
                 debug!("fetch vote_whitelist failed: {e}");
                 eyre!("vote whitelist not found".to_string())
             })?;
-        // TODO
         let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
-        let time_range = crate::ckb::test_get_vote_time_range(&state.ckb_client).await?;
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             proposal_state: proposal_state as i32,

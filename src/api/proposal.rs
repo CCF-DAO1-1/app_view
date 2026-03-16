@@ -373,34 +373,6 @@ pub struct StateQuery {
     pub state: i32,
 }
 
-#[utoipa::path(
-    post,
-    path = "/api/proposal/update_state",
-    params(StateQuery),
-    description = "方便调试用的，请勿随意调用"
-)]
-pub async fn update_state(
-    State(state): State<AppView>,
-    Query(query): Query<StateQuery>,
-) -> Result<impl IntoResponse, AppError> {
-    query
-        .validate()
-        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
-
-    let lines = Proposal::update_state(&state.db, &query.uri, query.state)
-        .await
-        .map_err(|e| {
-            debug!("update_state failed: {e}");
-            AppError::ExecSqlFailed(e.to_string())
-        })?;
-
-    if lines == 0 {
-        return Err(AppError::NotFound);
-    }
-
-    Ok(ok_simple())
-}
-
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
 #[serde(default)]
 pub struct InitiationParams {
@@ -411,21 +383,6 @@ pub struct InitiationParams {
 impl SignedParam for InitiationParams {
     fn timestamp(&self) -> i64 {
         self.timestamp
-    }
-}
-
-#[test]
-fn test_timestamp() {
-    let timestamp = chrono::Utc::now() + chrono::Duration::minutes(5);
-    println!("timestamp: {}", timestamp);
-    let now = chrono::Utc::now();
-    println!("now: {}", now);
-    let delta = (now - timestamp).abs();
-    println!("delta: {}", delta);
-    if delta < chrono::Duration::minutes(5) {
-        println!("valid");
-    } else {
-        println!("invalid");
     }
 }
 

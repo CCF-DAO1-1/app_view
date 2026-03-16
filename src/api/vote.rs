@@ -190,22 +190,6 @@ async fn get_proof(
     }
 }
 
-#[utoipa::path(
-    get,
-    path = "/api/vote/build_whitelist",
-    description = "方便调试用的，请勿随意调用"
-)]
-pub async fn build_whitelist(State(state): State<AppView>) -> Result<impl IntoResponse, AppError> {
-    tokio::spawn(
-        crate::scheduler::build_vote_whitelist::build_vote_whitelist(
-            state.db.clone(),
-            state.ckb_client.clone(),
-            state.ckb_net,
-        ),
-    );
-    Ok(ok_simple())
-}
-
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
 #[serde(default)]
 pub struct CreateVoteMetaParams {
@@ -293,14 +277,6 @@ pub async fn create_vote_meta(
         "vote_meta": vote_meta_row,
         "outputsData": outputs_data
     })))
-}
-
-#[test]
-fn test() {
-    let hex = "89000000180000003c000000550000005d0000006500000020000000c11b4ffff3879b547f6875594ad60efa73422caa470bf46181dd558c48f6c4ea190000000c0000001300000003000000796573020000006e6f000000006908753c00000000690c69bc20000000953dc36641f25d4ca206f8464a53242d2cbdcac72ef2b0eb87ccdb95aa93c8b9";
-    let bs = hex::decode(hex).unwrap();
-    let vm = molecules::VoteMeta::from_slice(&bs).unwrap();
-    println!("vm: {}", vm);
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
@@ -695,20 +671,6 @@ pub async fn list_self(
         "per_page": query.per_page,
         "total":  total.0
     })))
-}
-
-#[test]
-fn test_unsigned_bytes() {
-    let msg = CreateVoteMetaParams {
-        proposal_uri: "".to_string(),
-        candidates: vec![],
-        start_time: 1,
-        end_time: 1,
-        timestamp: chrono::Utc::now().timestamp(),
-    };
-    let unsigned_bytes = serde_ipld_dagcbor::to_vec(&msg).unwrap();
-    println!("unsigned_bytes: {:?}", unsigned_bytes);
-    println!("unsigned_bytes: {}", hex::encode(&unsigned_bytes));
 }
 
 pub async fn build_vote_meta(

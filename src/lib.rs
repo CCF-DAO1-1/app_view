@@ -30,7 +30,6 @@ pub struct AppView {
     pub indexer_vote_url: String,
     pub ckb_client: ckb_sdk::CkbRpcAsyncClient,
     pub ckb_net: ckb_sdk::NetworkType,
-    pub whitelist: Vec<String>,
 }
 
 pub enum AddressPayloadOption {

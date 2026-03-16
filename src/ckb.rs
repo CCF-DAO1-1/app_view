@@ -145,55 +145,6 @@ async fn pw_lock_capacity(
     Ok(total_capacity)
 }
 
-#[tokio::test]
-async fn test_pw_lock() {
-    let ckb_addr = "ckt1qrejnmlar3r452tcg57gvq8patctcgy8acync0hxfnyka35ywafvkqgjv3se7nm9mjen690t26r3zfccuxkwzme5qq4q85en";
-    let address = crate::AddressParser::default()
-        .set_network(ckb_sdk::NetworkType::Testnet)
-        .parse(ckb_addr)
-        .unwrap();
-    println!("{address}");
-    let lock = ckb_types::packed::Script::from(address.payload());
-    println!("{lock}");
-
-    let b = lock.args().raw_data()[1..21].to_vec();
-    println!("0x{}", hex::encode(&b));
-
-    let payload = AddressPayload::Full {
-        hash_type: ScriptHashType::Type,
-        code_hash: ckb_types::packed::Byte32::from_slice(
-            &hex::decode("58c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63")
-                .unwrap(),
-        )
-        .unwrap(),
-        args: Bytes::from_owner(b),
-    };
-    let address = Address::new(NetworkType::Testnet, payload.clone(), true).to_string();
-    println!("{address}");
-}
-
-#[test]
-fn test_outpoint_to_args() {
-    use ckb_types::prelude::Entity;
-    let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
-        tx_hash: ckb_types::H256(
-            hex::decode(
-                "0x5e81c54bc21c321bea4993f4d04464c8cba7a545aae542e755e5b79b1fd12550"
-                    .trim_start_matches("0x"),
-            )
-            .unwrap()
-            .try_into()
-            .unwrap(),
-        ),
-        index: 0.into(),
-    }
-    .into();
-    let pubkey_hash = ckb_hash::blake2b_256(vote_meta_out_point.as_bytes());
-    let args = pubkey_hash[0..20].to_vec();
-    let args = format!("0x{}", hex::encode(args));
-    assert_eq!(args, "0x6aa486510e313005d89dd8b5dbbb1d1110ba2d7b");
-}
-
 pub async fn get_vote_result(
     ckb_client: &CkbRpcAsyncClient,
     ckb_net: NetworkType,
@@ -215,7 +166,9 @@ pub async fn get_vote_result(
     let args = pubkey_hash[0..20].to_vec();
     let args = format!("0x{}", hex::encode(args));
     let vote_code_hash = match ckb_net {
-        NetworkType::Mainnet => "0x38716b429cb139405d32ff86a916827862b2fa819916894848d8460da8953afb",
+        NetworkType::Mainnet => {
+            "0x38716b429cb139405d32ff86a916827862b2fa819916894848d8460da8953afb"
+        }
         NetworkType::Testnet | NetworkType::Dev | NetworkType::Staging | NetworkType::Preview => {
             "0xb140de2d7d1536cfdcb82da7520475edce5785dff90edae9073c1143d88f50c5"
         }
@@ -267,44 +220,6 @@ pub async fn get_vote_result(
         }
     }
     Ok(result)
-}
-
-#[test]
-fn test_bit_flag() {
-    let f: u8 = 1 << 2;
-    println!("{f}");
-    println!("{f:b}");
-    let f = f.to_le_bytes();
-    println!("{f:?}");
-    let f = hex::encode(f);
-    println!("{f}");
-
-    let f = hex::decode(f).unwrap();
-    let mut bs = String::new();
-    for b in f {
-        let b = b.reverse_bits();
-        bs.push_str(&format!("{b:08b}"));
-    }
-    println!("{bs}, len: {}", bs.len());
-    let indices = bs.match_indices('1');
-    for (i, _) in indices {
-        println!("index: {i}");
-    }
-}
-
-#[tokio::test]
-async fn test_get_vote_result() {
-    let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");
-    let indexer_bind_url = "";
-    let r = get_vote_result(
-        &ckb_client,
-        NetworkType::Testnet,
-        indexer_bind_url,
-        "0x5e81c54bc21c321bea4993f4d04464c8cba7a545aae542e755e5b79b1fd12550",
-    )
-    .await
-    .unwrap();
-    println!("{r:?}");
 }
 
 pub async fn get_ckb_addr_by_did(
@@ -362,104 +277,6 @@ pub async fn get_tx_status(
         .map(|t| t.tx_status.status)
 }
 
-#[tokio::test]
-async fn get_live_cell() {
-    let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");
-
-    let r = ckb_client
-        .get_live_cell(
-            ckb_jsonrpc_types::OutPoint {
-                tx_hash: ckb_types::H256(
-                    hex::decode("3071bec564eafa4eb981f56e028e65216af04a788ddbbc93cc2a2d625235b22a")
-                        .unwrap()
-                        .try_into()
-                        .unwrap(),
-                ),
-                index: 0.into(),
-            },
-            false,
-        )
-        .await
-        .unwrap();
-    println!("{:?}", r);
-}
-
-#[tokio::test]
-async fn get_tx() {
-    let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");
-
-    let t = ckb_client
-        .get_transaction(ckb_types::H256(
-            hex::decode("3071bec564eafa4eb981f56e028e65216af04a788ddbbc93cc2a2d625235b22a")
-                .unwrap()
-                .try_into()
-                .unwrap(),
-        ))
-        .await
-        .unwrap();
-    match t.unwrap().transaction.unwrap().inner {
-        ckb_jsonrpc_types::Either::Left(tx) => {
-            tx.inner.outputs_data.iter().for_each(|d| {
-                println!("{:?}", d);
-            });
-        }
-        ckb_jsonrpc_types::Either::Right(bytes) => {
-            println!("tx bytes: {:?}", bytes);
-        }
-    };
-}
-
-#[tokio::test]
-async fn get_cells() {
-    let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");
-    let ckb_addr = "ckt1qrejnmlar3r452tcg57gvq8patctcgy8acync0hxfnyka35ywafvkqgjv3se7nm9mjen690t26r3zfccuxkwzme5qq4q85en";
-    let total_capacity =
-        get_nervos_dao_deposit(&ckb_client, ckb_sdk::NetworkType::Testnet, ckb_addr)
-            .await
-            .unwrap();
-    println!("total capacity: {total_capacity}");
-}
-
-#[tokio::test]
-async fn test_ckb_addr_by_did() {
-    let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");
-    let did = "wwokkmvehrkudo5jeengd4udqko3slc";
-    let ckb_addr = get_ckb_addr_by_did(&ckb_client, &ckb_sdk::NetworkType::Testnet, did)
-        .await
-        .unwrap();
-    println!("ckb_addr: {ckb_addr}");
-}
-
-#[test]
-fn test() {
-    let s = "b59ca532a43c5541bba9211a61f283829db92c422eabf054c8fa3ea5adeabbe3";
-    let bs = hex::decode(s).unwrap();
-    let did = base32::encode(base32::Alphabet::Rfc4648Lower { padding: false }, &bs);
-    println!("did: {}", did);
-}
-
-#[tokio::test]
-async fn get_last() {
-    let ckb_client = ckb_sdk::CkbRpcAsyncClient::new("https://testnet.ckb.dev/");
-
-    let r = ckb_client.get_blockchain_info().await.unwrap();
-    println!("{:?}", r);
-
-    let r = ckb_client.get_current_epoch().await.unwrap();
-    println!("{:?}", r);
-
-    let bn = ckb_client.get_tip_block_number().await.unwrap();
-    println!("{:?}", bn);
-
-    let r = EpochNumberWithFraction::new(
-        r.number.into(),
-        Into::<u64>::into(bn) - Into::<u64>::into(r.start_number),
-        r.length.into(),
-    );
-    r.full_value();
-    println!("{:?}", r);
-}
-
 pub async fn get_vote_time_range(
     ckb_client: &CkbRpcAsyncClient,
     duration_days: u64,
@@ -479,37 +296,4 @@ pub async fn get_vote_time_range(
         current_epoch.length.into(),
     );
     Ok((begin.full_value(), end.full_value()))
-}
-
-// TODO: for test only, remove it later
-pub async fn test_get_vote_time_range(ckb_client: &CkbRpcAsyncClient) -> Result<(u64, u64)> {
-    let current_epoch = ckb_client.get_current_epoch().await?;
-    let bn = ckb_client.get_tip_block_number().await?;
-
-    let begin = EpochNumberWithFraction::new(
-        current_epoch.number.into(),
-        Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number),
-        current_epoch.length.into(),
-    );
-
-    let index = Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number) + 50;
-    let add = if index >= current_epoch.length.into() {
-        (1, index - Into::<u64>::into(current_epoch.length))
-    } else {
-        (0, index)
-    };
-
-    let end = EpochNumberWithFraction::new(
-        Into::<u64>::into(current_epoch.number) + add.0,
-        add.1,
-        current_epoch.length.into(),
-    );
-    Ok((begin.full_value(), end.full_value()))
-}
-
-#[test]
-fn show_epoch() {
-    let epoch = 1979140794232921;
-    let epoch = EpochNumberWithFraction::from_full_value(epoch);
-    println!("{epoch}");
 }

@@ -50,8 +50,6 @@ pub struct Args {
     relayer: String,
     #[clap(short, long)]
     pds: String,
-    #[clap(short, long, default_value = "")]
-    whitelist: String,
     #[clap(short, long, default_value = "false")]
     apidoc: bool,
     #[clap(short, long, default_value = "Testnet")]
@@ -100,17 +98,6 @@ async fn main() -> Result<()> {
                 ckb_sdk::NetworkType::Testnet
             }
         },
-        whitelist: args
-            .whitelist
-            .split(',')
-            .filter_map(|s| {
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s.to_owned())
-                }
-            })
-            .collect(),
     };
 
     // reconnect
@@ -141,18 +128,12 @@ async fn main() -> Result<()> {
     };
     let router = router
         // api routes
-        .route("/api/record/create", post(api::record::create))
-        .route("/api/record/update", post(api::record::update))
         .route("/api/repo/profile", get(api::repo::profile))
         .route("/api/proposal/list", post(api::proposal::list))
         .route("/api/proposal/detail", get(api::proposal::detail))
         .route(
             "/api/proposal/initiation_vote",
             post(api::proposal::initiation_vote),
-        )
-        .route(
-            "/api/proposal/update_state",
-            post(api::proposal::update_state),
         )
         .route(
             "/api/proposal/update_receiver_addr",
@@ -171,7 +152,6 @@ async fn main() -> Result<()> {
         .route("/api/vote/weight", get(api::vote::weight))
         .route("/api/vote/whitelist", get(api::vote::whitelist))
         .route("/api/vote/proof", get(api::vote::proof))
-        .route("/api/vote/build_whitelist", get(api::vote::build_whitelist))
         .route(
             "/api/vote/update_meta_tx_hash",
             post(api::vote::update_meta_tx_hash),
