@@ -245,7 +245,11 @@ pub async fn create_vote_tx(
                 debug!("fetch vote_whitelist failed: {e}");
                 eyre!("vote whitelist not found".to_string())
             })?;
-        let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
+        let duration_days = match proposal_state {
+            ProposalState::MilestoneVote | ProposalState::DelayVote => 3,
+            _ => 7,
+        };
+        let time_range = get_vote_time_range(&state.ckb_client, duration_days).await?;
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             proposal_state: proposal_state as i32,
