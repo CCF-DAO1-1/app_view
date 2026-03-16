@@ -20,10 +20,9 @@ use validator::Validate;
 use crate::{
     AppView,
     api::{SignedBody, SignedParam},
-    ckb::{get_ckb_addr_by_did, get_vote_result, get_vote_time_range},
+    ckb::{get_ckb_addr_by_did, get_vote_result},
     error::AppError,
     lexicon::{
-        administrator::{Administrator, AdministratorRow},
         proposal::{Proposal, ProposalSample},
         vote::{Vote, VoteRow},
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
@@ -188,95 +187,6 @@ async fn get_proof(
     } else {
         Err(eyre!("Not in the whitelist"))
     }
-}
-
-#[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
-#[serde(default)]
-pub struct CreateVoteMetaParams {
-    pub proposal_uri: String,
-    pub candidates: Vec<String>,
-    pub start_time: u64,
-    pub end_time: u64,
-    pub timestamp: i64,
-}
-
-impl SignedParam for CreateVoteMetaParams {
-    fn timestamp(&self) -> i64 {
-        self.timestamp
-    }
-}
-
-#[utoipa::path(post, path = "/api/vote/create_vote_meta")]
-pub async fn create_vote_meta(
-    State(state): State<AppView>,
-    Json(body): Json<SignedBody<CreateVoteMetaParams>>,
-) -> Result<impl IntoResponse, AppError> {
-    body.validate()
-        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
-
-    let (sql, value) = Administrator::build_select()
-        .and_where(Expr::col(Administrator::Did).eq(body.did.clone()))
-        .build_sqlx(PostgresQueryBuilder);
-    let _admin_row: AdministratorRow = query_as_with(&sql, value)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::ValidateFailed(format!("not administrator: {e}")))?;
-
-    body.verify_signature(&state.indexer_did_url)
-        .await
-        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
-
-    let (sql, value) = Proposal::build_sample()
-        .and_where(Expr::col(Proposal::Uri).eq(body.params.proposal_uri.clone()))
-        .build_sqlx(PostgresQueryBuilder);
-    let proposal_sample: ProposalSample = query_as_with(&sql, value)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::ValidateFailed(format!("proposal not found: {e}")))?;
-    let proposal_hash = ckb_hash::blake2b_256(serde_json::to_vec(&proposal_sample.uri)?);
-
-    let (sql, value) = VoteMeta::build_select()
-        .and_where(Expr::col(VoteMeta::ProposalUri).eq(body.params.proposal_uri.clone()))
-        .and_where(Expr::col(VoteMeta::State).eq(0))
-        .build_sqlx(PostgresQueryBuilder);
-    let vote_meta_row = if let Ok(vote_meta_row) = query_as_with::<_, VoteMetaRow, _>(&sql, value)
-        .fetch_one(&state.db)
-        .await
-    {
-        vote_meta_row
-    } else {
-        //  7 days
-        let time_range = get_vote_time_range(&state.ckb_client, 7).await?;
-        let mut vote_meta_row = VoteMetaRow {
-            id: -1,
-            proposal_state: proposal_sample.state,
-            state: 0,
-            tx_hash: None,
-            proposal_uri: body.params.proposal_uri.clone(),
-            whitelist_id: chrono::Local::now().format("%Y-%m-%d").to_string(),
-            candidates: body.params.candidates.clone(),
-            start_time: time_range.0 as i64,
-            end_time: time_range.1 as i64,
-            creator: body.did.clone(),
-            results: None,
-            created: chrono::Local::now(),
-        };
-
-        vote_meta_row.id = VoteMeta::insert(&state.db, &vote_meta_row).await?;
-        vote_meta_row
-    };
-
-    let vote_meta = build_vote_meta(&state.db, &vote_meta_row, &proposal_hash).await?;
-
-    let vote_meta_bytes = vote_meta.as_bytes().to_vec();
-    let vote_meta_hex = hex::encode(vote_meta_bytes);
-
-    let outputs_data = vec![vote_meta_hex];
-
-    Ok(ok(json!({
-        "vote_meta": vote_meta_row,
-        "outputsData": outputs_data
-    })))
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]
