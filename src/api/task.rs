@@ -78,10 +78,14 @@ pub async fn get(
         ])
         .from(Task::Table)
         .and_where(Expr::col(Task::State).ne(TaskState::Completed as i32))
-        .and_where(Expr::col(Task::Operators).is_null().or(Expr::cust(format!(
-            "'{}' = ANY(\"task\".\"operators\")",
-            query.did
-        ))))
+        .and_where(
+            Expr::col(Task::Operators)
+                .is_null()
+                .or(Expr::cust_with_values(
+                    "'?' = ANY(\"task\".\"operators\")",
+                    [&query.did],
+                )),
+        )
         .order_by(Task::Created, Order::Desc)
         .offset(offset)
         .limit(query.per_page)
@@ -129,10 +133,14 @@ pub async fn get(
         .expr(Expr::col((Task::Table, Task::Id)).count_distinct())
         .from(Task::Table)
         .and_where(Expr::col(Task::State).ne(TaskState::Completed as i32))
-        .and_where(Expr::col(Task::Operators).is_null().or(Expr::cust(format!(
-            "'{}' = ANY(\"task\".\"operators\")",
-            query.did
-        ))))
+        .and_where(
+            Expr::col(Task::Operators)
+                .is_null()
+                .or(Expr::cust_with_values(
+                    "'?' = ANY(\"task\".\"operators\")",
+                    [&query.did],
+                )),
+        )
         .build_sqlx(PostgresQueryBuilder);
 
     let total: (i64,) = query_as_with(&sql, values.clone())

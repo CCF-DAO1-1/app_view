@@ -90,7 +90,7 @@ pub async fn list(
         .and_where_option(
             query
                 .q
-                .map(|q| Expr::cust(format!("record #>> '{{data,title}}' like '%{q}%' or record #>> '{{data,goals}}' like '%{q}%' or record #>> '{{data,team}}' like '%{q}%'"))),
+                .map(|q| Expr::cust_with_values("record #>> '{{data,title}}' like '%?%' or record #>> '{{data,goals}}' like '%?%' or record #>> '{{data,team}}' like '%?%'", [&q, &q, &q])),
         )
         .order_by(Proposal::Updated, Order::Desc)
         .limit(query.limit)
@@ -444,7 +444,6 @@ pub async fn initiation_vote(
 
     // check proposer's weight > 10_000_000_000_000
     let ckb_addr = crate::ckb::get_ckb_addr_by_did(&state.ckb_client, &state.ckb_net, &did).await?;
-    // TODO: use ckb
     let weight = crate::indexer_bind::get_weight(
         &state.ckb_client,
         state.ckb_net,

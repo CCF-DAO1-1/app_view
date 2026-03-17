@@ -28,7 +28,7 @@ use crate::{
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
         vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
     },
-    molecules::{self, VoteProof},
+    molecules,
     smt::{Blake2bHasher, CkbSMT, SMT_VALUE},
 };
 
@@ -95,18 +95,16 @@ pub async fn weight(
 
 #[utoipa::path(get, path = "/api/vote/whitelist")]
 pub async fn whitelist(State(state): State<AppView>) -> Result<impl IntoResponse, AppError> {
-    let id = chrono::Local::now().format("%Y-%m-%d").to_string();
-
-    let (sql, values) = VoteWhitelist::build_select()
-        .and_where(Expr::col(VoteWhitelist::Id).eq(id))
+    let (sql, value) = VoteWhitelist::build_select()
+        .order_by(VoteWhitelist::Created, Order::Desc)
+        .limit(1)
         .build_sqlx(PostgresQueryBuilder);
-
-    let row: VoteWhitelistRow = query_as_with(&sql, values.clone())
+    let row: VoteWhitelistRow = sqlx::query_as_with(&sql, value)
         .fetch_one(&state.db)
         .await
         .map_err(|e| {
-            debug!("exec sql failed: {e}");
-            AppError::ExecSqlFailed(e.to_string())
+            debug!("fetch vote_whitelist failed: {e}");
+            eyre!("vote whitelist not found".to_string())
         })?;
     Ok(ok(row))
 }
@@ -290,61 +288,6 @@ impl SignedParam for CreateVoteParams {
     fn timestamp(&self) -> i64 {
         self.timestamp
     }
-}
-
-// #[utoipa::path(post, path = "/api/vote/create_vote")]
-pub async fn _create_vote(
-    State(state): State<AppView>,
-    Json(body): Json<SignedBody<CreateVoteParams>>,
-) -> Result<impl IntoResponse, AppError> {
-    body.validate()
-        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
-
-    body.verify_signature(&state.indexer_did_url)
-        .await
-        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
-
-    let mut vote_row = VoteRow {
-        id: -1,
-        state: 0,
-        tx_hash: None,
-        vote_meta_id: body.params.vote_meta_id,
-        candidates_index: body.params.candidates_index,
-        voter: body.did.clone(),
-        created: chrono::Local::now(),
-    };
-    vote_row.id = Vote::insert(&state.db, &vote_row).await?;
-
-    let (sql, value) = VoteMeta::build_select()
-        .and_where(Expr::col(VoteMeta::Id).eq(body.params.vote_meta_id))
-        .build_sqlx(PostgresQueryBuilder);
-    let vote_meta_row: VoteMetaRow = query_as_with(&sql, value)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::ValidateFailed(format!("not vote_meta: {e}")))?;
-
-    // TODO build vote row tx
-    let vote_addr = get_ckb_addr_by_did(&state.ckb_client, &state.ckb_net, &body.did).await?;
-    let address = crate::AddressParser::default()
-        .set_network(state.ckb_net)
-        .parse(&vote_addr)
-        .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
-    let lock_script = ckb_types::packed::Script::from(address.payload());
-    let proof = get_proof(&state, &vote_meta_row.whitelist_id, &vote_addr).await?;
-
-    let _vote_proof = VoteProof::new_builder()
-        .lock_script_hash::<Vec<u8>>(lock_script.calc_script_hash().raw_data().to_vec())
-        .smt_proof::<Vec<u8>>(proof.1)
-        .build();
-
-    Ok(ok(json!({
-        "row_tx": {
-            "cellDeps": [],
-            "outputs": [],
-            "outputsData": [],
-            "witnesses": [],
-        }
-    })))
 }
 
 #[derive(Debug, Default, Validate, Deserialize, Serialize, ToSchema)]

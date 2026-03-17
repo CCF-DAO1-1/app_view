@@ -28,10 +28,10 @@ impl IntoResponse for AppError {
                 "NotFound",
                 string_to_static_str("NOT_FOUND".to_owned()),
             ),
-            AppError::ExecSqlFailed(msg) => (
+            AppError::ExecSqlFailed(_msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "ExecSqlFailed",
-                string_to_static_str(json!({"sql": msg}).to_string()),
+                string_to_static_str("ExecSqlFailed".to_string()),
             ),
             AppError::CallPdsFailed(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
