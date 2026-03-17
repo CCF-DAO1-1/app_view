@@ -4,7 +4,7 @@ use sea_query_sqlx::SqlxBinder;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use crate::{
-    AppView, ckb,
+    AppView, ckb, indexer_bind,
     lexicon::{profile::Profile, vote_whitelist::VoteWhitelist},
     smt::{CkbSMT, SMT_VALUE},
 };
@@ -16,8 +16,9 @@ pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<
             let db = app.db.clone();
             let ckb_client = app.ckb_client.clone();
             let ckb_net = app.ckb_net;
+            let indexer_bind_url = app.indexer_bind_url.clone();
             async move {
-                build_vote_whitelist(db, ckb_client, ckb_net)
+                build_vote_whitelist(db, ckb_client, ckb_net, indexer_bind_url)
                     .await
                     .map_err(|e| error!("job run failed: {e}"))
                     .ok();
@@ -44,6 +45,7 @@ pub async fn build_vote_whitelist(
     db: sqlx::Pool<sqlx::Postgres>,
     ckb_client: ckb_sdk::CkbRpcAsyncClient,
     ckb_net: ckb_sdk::NetworkType,
+    indexer_bind_url: String,
 ) -> Result<()> {
     let (sql, values) = sea_query::Query::select()
         .columns([(Profile::Table, Profile::Did)])
@@ -56,13 +58,18 @@ pub async fn build_vote_whitelist(
     let mut smt_tree = CkbSMT::default();
     for did in did_list {
         if let Ok(ckb_addr) = ckb::get_ckb_addr_by_did(&ckb_client, &ckb_net, &did).await
-            && let Ok(deposit) =
-                ckb::get_nervos_dao_deposit(&ckb_client, ckb_net, &ckb_addr, Some(block_number))
-                    .await
+            && let Ok(deposit) = indexer_bind::get_weight(
+                &ckb_client,
+                ckb_net,
+                &indexer_bind_url,
+                &ckb_addr,
+                Some(block_number),
+            )
+            .await
         {
             if deposit > 0 {
                 info!(
-                    "DID: {} with CKB address: {} has deposit: {} shannon, added to vote whitelist",
+                    "DID: {} with CKB address: {} has weight: {}, added to vote whitelist",
                     did, ckb_addr, deposit
                 );
                 let address = crate::AddressParser::default()
@@ -77,7 +84,7 @@ pub async fn build_vote_whitelist(
                 smt_tree.update(key.into(), SMT_VALUE.into()).ok();
             } else {
                 info!(
-                    "DID: {} with CKB address: {} has deposit: {} shannon, not qualified for vote whitelist",
+                    "DID: {} with CKB address: {} has weight: {}, not qualified for vote whitelist",
                     did, ckb_addr, deposit
                 );
             }
