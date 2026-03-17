@@ -1,8 +1,4 @@
-use ckb_types::core::EpochNumberWithFraction;
-use color_eyre::{
-    Result,
-    eyre::{OptionExt, eyre},
-};
+use color_eyre::{Result, eyre::eyre};
 use common_x::restful::{
     axum::{
         Json,
@@ -27,7 +23,7 @@ use crate::{
     ckb::{get_ckb_addr_by_did, get_vote_result},
     error::AppError,
     lexicon::{
-        proposal::{Proposal, ProposalSample, ProposalState},
+        proposal::{Proposal, ProposalSample},
         vote::{Vote, VoteRow},
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
         vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
@@ -403,48 +399,11 @@ pub async fn detail(
     }
 
     let votes = if let Some(tx_hash) = &vote_meta_row.tx_hash {
-        let block_number = vote_meta_row
-            .block_number
-            .ok_or_eyre("vote_meta block_number is null")? as u64;
-
-        let begin_epoch = EpochNumberWithFraction::from_full_value(
-            state
-                .ckb_client
-                .get_block_by_number(block_number.into())
-                .await?
-                .ok_or_eyre("ckb block not found")?
-                .header
-                .inner
-                .epoch
-                .into(),
-        );
-        let duration_days = match ProposalState::from(vote_meta_row.proposal_state) {
-            ProposalState::MilestoneVote | ProposalState::DelayVote => 3,
-            _ => 7,
-        };
-        let end_time = EpochNumberWithFraction::new(
-            Into::<u64>::into(begin_epoch.number()) + (6 * duration_days),
-            begin_epoch.index(),
-            begin_epoch.length(),
-        );
-        let end_epoch = state
-            .ckb_client
-            .get_epoch_by_number(end_time.number().into())
-            .await?
-            .ok_or_eyre("ckb epoch not found")?;
-        let end_block_number = Into::<u64>::into(end_epoch.start_number)
-            + (if end_time.length().is_multiple_of(end_time.index()) {
-                end_time.index() * Into::<u64>::into(end_epoch.length) / end_time.length()
-            } else {
-                end_time.index() * Into::<u64>::into(end_epoch.length) / end_time.length() + 1
-            });
-
         get_vote_result(
             &state.ckb_client,
             state.ckb_net,
             &state.indexer_bind_url,
             tx_hash,
-            end_block_number,
         )
         .await?
     } else {

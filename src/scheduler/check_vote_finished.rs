@@ -135,6 +135,7 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
             } else {
                 end_time.index() * Into::<u64>::into(end_epoch.length) / end_time.length() + 1
             });
+        debug!("end_block_number: {}", end_block_number);
 
         // get votes by vote_indexer
         let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {

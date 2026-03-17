@@ -157,7 +157,6 @@ pub async fn get_vote_result(
     ckb_net: NetworkType,
     indexer_bind_url: &str,
     vote_meta_tx_hash: &str,
-    until_block_number: u64,
 ) -> Result<HashMap<String, (usize, u64)>> {
     use ckb_types::prelude::Entity;
     let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
@@ -220,7 +219,7 @@ pub async fn get_vote_result(
                     ckb_net,
                     indexer_bind_url,
                     &address,
-                    Some(until_block_number),
+                    None,
                 )
                 .await
                 .unwrap_or(0);
