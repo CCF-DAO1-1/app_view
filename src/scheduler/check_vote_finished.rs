@@ -79,14 +79,35 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
         id,
         proposal_uri,
         proposal_state,
-        end_time,
+        block_number,
         creator,
         tx_hash,
         candidates,
         ..
     } in rows
     {
-        let end_time = EpochNumberWithFraction::from_full_value(end_time as u64);
+        let block_number = if let Some(block_number) = block_number {
+            block_number as u64
+        } else {
+            continue;
+        };
+        let end_time = if let Ok(Some(epoch)) = state
+            .ckb_client
+            .get_epoch_by_number((block_number).into())
+            .await
+        {
+            let duration_days = match ProposalState::from(proposal_state) {
+                ProposalState::MilestoneVote | ProposalState::DelayVote => 3,
+                _ => 7,
+            };
+            EpochNumberWithFraction::new(
+                Into::<u64>::into(epoch.number) + (6 * duration_days),
+                block_number - Into::<u64>::into(epoch.start_number),
+                epoch.length.into(),
+            )
+        } else {
+            continue;
+        };
         debug!(
             "check vote_meta id: {}, proposal_state: {}, end_time: {}",
             id, proposal_state, end_time,

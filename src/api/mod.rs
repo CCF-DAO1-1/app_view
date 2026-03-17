@@ -23,7 +23,6 @@ use validator::Validate;
 use crate::{
     AppView,
     atproto::{NSID_PROFILE, get_record},
-    ckb::get_vote_time_range,
     lexicon::{
         self,
         profile::{Profile, ProfileRow},
@@ -245,16 +244,12 @@ pub async fn create_vote_tx(
                 debug!("fetch vote_whitelist failed: {e}");
                 eyre!("vote whitelist not found".to_string())
             })?;
-        let duration_days = match proposal_state {
-            ProposalState::MilestoneVote | ProposalState::DelayVote => 3,
-            _ => 7,
-        };
-        let time_range = get_vote_time_range(&state.ckb_client, duration_days).await?;
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
             proposal_state: proposal_state as i32,
             state: 0,
             tx_hash: None,
+            block_number: None,
             proposal_uri: proposal_uri.to_string(),
             whitelist_id: vote_whitelist_row.id,
             candidates: vec![
@@ -262,8 +257,8 @@ pub async fn create_vote_tx(
                 "Agree".to_string(),
                 "Against".to_string(),
             ],
-            start_time: time_range.0 as i64,
-            end_time: time_range.1 as i64,
+            start_time: 0,
+            end_time: 0,
             creator: creator.to_string(),
             results: None,
             created: chrono::Local::now(),

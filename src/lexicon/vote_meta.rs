@@ -16,6 +16,7 @@ pub enum VoteMeta {
     ProposalState,
     State,
     TxHash,
+    BlockNumber,
     ProposalUri,
     WhitelistId,
     Candidates,
@@ -63,6 +64,7 @@ impl VoteMeta {
             )
             .col(ColumnDef::new(Self::State).integer().not_null().default(0))
             .col(ColumnDef::new(Self::TxHash).string())
+            .col(ColumnDef::new(Self::BlockNumber).big_integer())
             .col(ColumnDef::new(Self::ProposalUri).string().not_null())
             .col(ColumnDef::new(Self::WhitelistId).string().not_null())
             .col(ColumnDef::new(Self::Candidates).array(ColumnType::String(Default::default())))
@@ -93,6 +95,7 @@ impl VoteMeta {
                 Self::ProposalState,
                 Self::State,
                 Self::TxHash,
+                Self::BlockNumber,
                 Self::ProposalUri,
                 Self::WhitelistId,
                 Self::Candidates,
@@ -106,6 +109,7 @@ impl VoteMeta {
                 row.proposal_state.into(),
                 row.state.into(),
                 row.tx_hash.clone().into(),
+                row.block_number.into(),
                 row.proposal_uri.clone().into(),
                 row.whitelist_id.clone().into(),
                 row.candidates.clone().into(),
@@ -156,6 +160,7 @@ impl VoteMeta {
                 (Self::Table, Self::ProposalState),
                 (Self::Table, Self::State),
                 (Self::Table, Self::TxHash),
+                (Self::Table, Self::BlockNumber),
                 (Self::Table, Self::ProposalUri),
                 (Self::Table, Self::WhitelistId),
                 (Self::Table, Self::Candidates),
@@ -176,6 +181,7 @@ pub struct VoteMetaRow {
     pub proposal_state: i32,
     pub state: i32,
     pub tx_hash: Option<String>,
+    pub block_number: Option<i64>,
     pub proposal_uri: String,
     pub whitelist_id: String,
     pub candidates: Vec<String>,

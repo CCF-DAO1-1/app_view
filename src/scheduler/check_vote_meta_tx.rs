@@ -120,7 +120,16 @@ pub async fn check_vote_meta_tx(
                     };
                     let (sql, values) = sea_query::Query::update()
                         .table(VoteMeta::Table)
-                        .value(VoteMeta::State, meta_state as i32)
+                        .values([
+                            (VoteMeta::State, (meta_state as i32).into()),
+                            (
+                                VoteMeta::BlockNumber,
+                                tx_status
+                                    .block_number
+                                    .map(|nb| Into::<u64>::into(nb) as i64)
+                                    .into(),
+                            ),
+                        ])
                         .and_where(Expr::col(VoteMeta::Id).eq(row.id))
                         .build_sqlx(PostgresQueryBuilder);
                     sqlx::query_with(&sql, values).execute(&db).await.ok();

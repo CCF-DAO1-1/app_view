@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ckb_sdk::{Address, AddressPayload, CkbRpcAsyncClient, NetworkType};
 use ckb_types::{
     bytes::Bytes,
-    core::{EpochNumberWithFraction, ScriptHashType},
+    core::ScriptHashType,
     prelude::{Entity, Pack},
 };
 use color_eyre::{
@@ -275,25 +275,4 @@ pub async fn get_tx_status(
     tx_status
         .ok_or_eyre("get tx error")
         .map(|t| t.tx_status.status)
-}
-
-pub async fn get_vote_time_range(
-    ckb_client: &CkbRpcAsyncClient,
-    duration_days: u64,
-) -> Result<(u64, u64)> {
-    let current_epoch = ckb_client.get_current_epoch().await?;
-    let bn = ckb_client.get_tip_block_number().await?;
-
-    let begin = EpochNumberWithFraction::new(
-        current_epoch.number.into(),
-        Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number),
-        current_epoch.length.into(),
-    );
-
-    let end = EpochNumberWithFraction::new(
-        Into::<u64>::into(current_epoch.number) + (6 * duration_days),
-        Into::<u64>::into(bn) - Into::<u64>::into(current_epoch.start_number),
-        current_epoch.length.into(),
-    );
-    Ok((begin.full_value(), end.full_value()))
 }
