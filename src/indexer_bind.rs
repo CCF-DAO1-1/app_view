@@ -48,9 +48,11 @@ pub async fn get_weight(
     ckb_net: ckb_sdk::NetworkType,
     indexer_bind_url: &str,
     ckb_addr: &str,
+    until_block_number: Option<u64>,
 ) -> Result<u64> {
     let from_list = crate::indexer_bind::query_by_to(indexer_bind_url, ckb_addr).await?;
-    let mut weight = get_nervos_dao_deposit(ckb_client, ckb_net, ckb_addr).await?;
+    let mut weight =
+        get_nervos_dao_deposit(ckb_client, ckb_net, ckb_addr, until_block_number).await?;
 
     for from in from_list
         .as_array()
@@ -64,7 +66,8 @@ pub async fn get_weight(
         if from == ckb_addr {
             continue;
         }
-        let nervos_dao_deposit = get_nervos_dao_deposit(ckb_client, ckb_net, from).await?;
+        let nervos_dao_deposit =
+            get_nervos_dao_deposit(ckb_client, ckb_net, from, until_block_number).await?;
         weight += nervos_dao_deposit;
     }
     Ok(weight)

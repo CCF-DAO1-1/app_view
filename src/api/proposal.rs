@@ -449,6 +449,7 @@ pub async fn initiation_vote(
         state.ckb_net,
         &state.indexer_bind_url,
         &ckb_addr,
+        None,
     )
     .await?;
     if weight < 10_000_000_000_000 {

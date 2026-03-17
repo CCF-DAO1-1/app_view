@@ -91,23 +91,27 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
         } else {
             continue;
         };
-        let end_time = if let Ok(Some(epoch)) = state
-            .ckb_client
-            .get_epoch_by_number((block_number).into())
-            .await
-        {
-            let duration_days = match ProposalState::from(proposal_state) {
-                ProposalState::MilestoneVote | ProposalState::DelayVote => 3,
-                _ => 7,
-            };
-            EpochNumberWithFraction::new(
-                Into::<u64>::into(epoch.number) + (6 * duration_days),
-                block_number - Into::<u64>::into(epoch.start_number),
-                epoch.length.into(),
-            )
-        } else {
-            continue;
+
+        let begin_epoch = EpochNumberWithFraction::from_full_value(
+            state
+                .ckb_client
+                .get_block_by_number(block_number.into())
+                .await?
+                .ok_or_eyre("ckb block not found")?
+                .header
+                .inner
+                .epoch
+                .into(),
+        );
+        let duration_days = match ProposalState::from(proposal_state) {
+            ProposalState::MilestoneVote | ProposalState::DelayVote => 3,
+            _ => 7,
         };
+        let end_time = EpochNumberWithFraction::new(
+            Into::<u64>::into(begin_epoch.number()) + (6 * duration_days),
+            begin_epoch.index(),
+            begin_epoch.length(),
+        );
         debug!(
             "check vote_meta id: {}, proposal_state: {}, end_time: {}",
             id, proposal_state, end_time,
@@ -119,6 +123,18 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
         {
             continue;
         }
+
+        let end_epoch = state
+            .ckb_client
+            .get_epoch_by_number(end_time.number().into())
+            .await?
+            .ok_or_eyre("ckb epoch not found")?;
+        let end_block_number = Into::<u64>::into(end_epoch.start_number)
+            + (if end_time.length().is_multiple_of(end_time.index()) {
+                end_time.index() * Into::<u64>::into(end_epoch.length) / end_time.length()
+            } else {
+                end_time.index() * Into::<u64>::into(end_epoch.length) / end_time.length() + 1
+            });
 
         // get votes by vote_indexer
         let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
@@ -170,6 +186,7 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
                 state.ckb_net,
                 &state.indexer_bind_url,
                 ckb_addr,
+                Some(end_block_number),
             )
             .await
             .unwrap_or(0);

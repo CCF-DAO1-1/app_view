@@ -16,6 +16,7 @@ pub async fn get_nervos_dao_deposit(
     ckb_client: &CkbRpcAsyncClient,
     ckb_net: NetworkType,
     ckb_addr: &str,
+    until_block_number: Option<u64>,
 ) -> Result<u64> {
     let address = crate::AddressParser::default()
         .set_network(ckb_net)
@@ -58,6 +59,12 @@ pub async fn get_nervos_dao_deposit(
         .await?;
     let mut total_capacity = 0;
     for cell in &r.objects {
+        if let Some(until_block_number) = until_block_number
+            && cell.block_number > until_block_number.into()
+        {
+            continue;
+        }
+
         let output: &ckb_jsonrpc_types::CellOutput = &cell.output;
         total_capacity += output.capacity.value();
     }
@@ -150,6 +157,7 @@ pub async fn get_vote_result(
     ckb_net: NetworkType,
     indexer_bind_url: &str,
     vote_meta_tx_hash: &str,
+    until_block_number: u64,
 ) -> Result<HashMap<String, (usize, u64)>> {
     use ckb_types::prelude::Entity;
     let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
@@ -212,6 +220,7 @@ pub async fn get_vote_result(
                     ckb_net,
                     indexer_bind_url,
                     &address,
+                    Some(until_block_number),
                 )
                 .await
                 .unwrap_or(0);

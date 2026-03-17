@@ -11,6 +11,7 @@ pub enum VoteWhitelist {
     Id,
     List,
     RootHash,
+    BlockNumber,
     Created,
 }
 
@@ -22,11 +23,23 @@ impl VoteWhitelist {
             .col(ColumnDef::new(Self::Id).string().not_null().primary_key())
             .col(ColumnDef::new(Self::List).array(ColumnType::String(Default::default())))
             .col(ColumnDef::new(Self::RootHash).string().not_null())
+            .col(ColumnDef::new(Self::BlockNumber).big_integer().not_null())
             .col(
                 ColumnDef::new(Self::Created)
                     .timestamp_with_time_zone()
                     .not_null()
                     .default(Expr::current_timestamp()),
+            )
+            .build(PostgresQueryBuilder);
+        db.execute(query(&sql)).await?;
+
+        let sql = sea_query::Table::alter()
+            .table(Self::Table)
+            .add_column(
+                ColumnDef::new(Self::BlockNumber)
+                    .big_integer()
+                    .not_null()
+                    .default(0),
             )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
@@ -38,20 +51,28 @@ impl VoteWhitelist {
         id: &str,
         list: Vec<String>,
         root_hash: &str,
+        block_number: i64,
     ) -> Result<()> {
         let (sql, values) = sea_query::Query::insert()
             .into_table(Self::Table)
-            .columns([Self::Id, Self::List, Self::RootHash, Self::Created])
+            .columns([
+                Self::Id,
+                Self::List,
+                Self::RootHash,
+                Self::BlockNumber,
+                Self::Created,
+            ])
             .values([
                 id.into(),
                 list.into(),
                 root_hash.into(),
+                block_number.into(),
                 Expr::current_timestamp(),
             ])?
             .returning_col(Self::Id)
             .on_conflict(
                 OnConflict::column(Self::Id)
-                    .update_columns([Self::List, Self::RootHash, Self::Created])
+                    .update_columns([Self::List, Self::RootHash, Self::BlockNumber, Self::Created])
                     .to_owned(),
             )
             .build_sqlx(PostgresQueryBuilder);
@@ -66,6 +87,7 @@ impl VoteWhitelist {
                 (Self::Table, Self::Id),
                 (Self::Table, Self::List),
                 (Self::Table, Self::RootHash),
+                (Self::Table, Self::BlockNumber),
                 (Self::Table, Self::Created),
             ])
             .from(Self::Table)
@@ -78,5 +100,6 @@ pub struct VoteWhitelistRow {
     pub id: String,
     pub list: Vec<String>,
     pub root_hash: String,
+    pub block_number: i64,
     pub created: DateTime<Local>,
 }
