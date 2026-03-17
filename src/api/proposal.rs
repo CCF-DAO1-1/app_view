@@ -90,7 +90,7 @@ pub async fn list(
         .and_where_option(
             query
                 .q
-                .map(|q| Expr::cust_with_values("record #>> '{{data,title}}' like '%?%' or record #>> '{{data,goals}}' like '%?%' or record #>> '{{data,team}}' like '%?%'", [&q, &q, &q])),
+                .map(|q| Expr::cust_with_values("record #>> '{{data,title}}' like CONCAT('%', $1, '%') or record #>> '{{data,goals}}' like CONCAT('%', $2, '%') or record #>> '{{data,team}}' like CONCAT('%', $3, '%')", [&q, &q, &q])),
         )
         .order_by(Proposal::Updated, Order::Desc)
         .limit(query.limit)

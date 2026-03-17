@@ -82,7 +82,7 @@ pub async fn get(
             Expr::col(Task::Operators)
                 .is_null()
                 .or(Expr::cust_with_values(
-                    "'?' = ANY(\"task\".\"operators\")",
+                    "$1 = ANY(\"task\".\"operators\")",
                     [&query.did],
                 )),
         )
@@ -137,7 +137,7 @@ pub async fn get(
             Expr::col(Task::Operators)
                 .is_null()
                 .or(Expr::cust_with_values(
-                    "'?' = ANY(\"task\".\"operators\")",
+                    "$1 = ANY(\"task\".\"operators\")",
                     [&query.did],
                 )),
         )

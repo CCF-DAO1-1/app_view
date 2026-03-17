@@ -71,7 +71,7 @@ pub async fn list_reply(state: &AppView, query: ReplyQuery) -> Result<Value, App
         ])
         .expr(Expr::cust("(select count(\"like\".\"uri\") from \"like\" where \"like\".\"to\" = \"reply\".\"uri\") as like_count"))
         .expr(if let Some(viewer) =&query.viewer {
-            Expr::cust_with_values("((select count(\"like\".\"uri\") from \"like\" where \"like\".\"repo\" = '?' and \"like\".\"to\" = \"reply\".\"uri\" ) > 0) as liked", [viewer])
+            Expr::cust_with_values("((select count(\"like\".\"uri\") from \"like\" where \"like\".\"repo\" = $1 and \"like\".\"to\" = \"reply\".\"uri\" ) > 0) as liked", [viewer])
         } else {
             Expr::cust("false as liked".to_string())
         })
