@@ -32,17 +32,6 @@ impl VoteWhitelist {
             )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
-
-        let sql = sea_query::Table::alter()
-            .table(Self::Table)
-            .add_column(
-                ColumnDef::new(Self::BlockNumber)
-                    .big_integer()
-                    .not_null()
-                    .default(0),
-            )
-            .build(PostgresQueryBuilder);
-        db.execute(query(&sql)).await?;
         Ok(())
     }
 

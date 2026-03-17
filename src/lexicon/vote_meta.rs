@@ -85,12 +85,6 @@ impl VoteMeta {
             )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
-
-        let sql = sea_query::Table::alter()
-            .table(Self::Table)
-            .add_column(ColumnDef::new(Self::BlockNumber).big_integer())
-            .build(PostgresQueryBuilder);
-        db.execute(query(&sql)).await?;
         Ok(())
     }
 

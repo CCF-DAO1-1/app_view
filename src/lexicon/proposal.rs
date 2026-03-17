@@ -119,17 +119,6 @@ impl Proposal {
             .col(ColumnDef::new(Self::ReceiverAddr).string())
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
-
-        let sql = sea_query::Table::alter()
-            .table(Self::Table)
-            .add_column_if_not_exists(
-                ColumnDef::new(Self::Progress)
-                    .integer()
-                    .not_null()
-                    .default(0),
-            )
-            .build(PostgresQueryBuilder);
-        db.execute(query(&sql)).await?;
         Ok(())
     }
 
