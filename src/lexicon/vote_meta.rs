@@ -18,7 +18,7 @@ pub enum VoteMeta {
     TxHash,
     BlockNumber,
     ProposalUri,
-    WhitelistId,
+    VoterListId,
     Candidates,
     StartTime,
     EndTime,
@@ -66,7 +66,7 @@ impl VoteMeta {
             .col(ColumnDef::new(Self::TxHash).string())
             .col(ColumnDef::new(Self::BlockNumber).big_integer())
             .col(ColumnDef::new(Self::ProposalUri).string().not_null())
-            .col(ColumnDef::new(Self::WhitelistId).string().not_null())
+            .col(ColumnDef::new(Self::VoterListId).string().not_null())
             .col(ColumnDef::new(Self::Candidates).array(ColumnType::String(Default::default())))
             .col(ColumnDef::new(Self::StartTime).big_integer().not_null())
             .col(ColumnDef::new(Self::EndTime).big_integer().not_null())
@@ -97,7 +97,7 @@ impl VoteMeta {
                 Self::TxHash,
                 Self::BlockNumber,
                 Self::ProposalUri,
-                Self::WhitelistId,
+                Self::VoterListId,
                 Self::Candidates,
                 Self::StartTime,
                 Self::EndTime,
@@ -111,7 +111,7 @@ impl VoteMeta {
                 row.tx_hash.clone().into(),
                 row.block_number.into(),
                 row.proposal_uri.clone().into(),
-                row.whitelist_id.clone().into(),
+                row.voter_list_id.clone().into(),
                 row.candidates.clone().into(),
                 row.start_time.into(),
                 row.end_time.into(),
@@ -162,7 +162,7 @@ impl VoteMeta {
                 (Self::Table, Self::TxHash),
                 (Self::Table, Self::BlockNumber),
                 (Self::Table, Self::ProposalUri),
-                (Self::Table, Self::WhitelistId),
+                (Self::Table, Self::VoterListId),
                 (Self::Table, Self::Candidates),
                 (Self::Table, Self::StartTime),
                 (Self::Table, Self::EndTime),
@@ -183,7 +183,7 @@ pub struct VoteMetaRow {
     pub tx_hash: Option<String>,
     pub block_number: Option<i64>,
     pub proposal_uri: String,
-    pub whitelist_id: String,
+    pub voter_list_id: String,
     pub candidates: Vec<String>,
     pub start_time: i64,
     pub end_time: i64,

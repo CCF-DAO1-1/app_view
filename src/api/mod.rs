@@ -28,7 +28,7 @@ use crate::{
         profile::{Profile, ProfileRow},
         proposal::ProposalState,
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
-        vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
+        voter_list::{VoterList, VoterListRow},
     },
 };
 
@@ -49,7 +49,7 @@ use crate::{
         like::list,
         vote::bind_list,
         vote::weight,
-        vote::whitelist,
+        vote::voter_list,
         vote::proof,
         vote::update_meta_tx_hash,
         vote::prepare,
@@ -233,16 +233,16 @@ pub async fn create_vote_tx(
     {
         vote_meta_row
     } else {
-        let (sql, value) = VoteWhitelist::build_select()
-            .order_by(VoteWhitelist::Created, Order::Desc)
+        let (sql, value) = VoterList::build_select()
+            .order_by(VoterList::Created, Order::Desc)
             .limit(1)
             .build_sqlx(PostgresQueryBuilder);
-        let vote_whitelist_row: VoteWhitelistRow = sqlx::query_as_with(&sql, value)
+        let voter_list_row: VoterListRow = sqlx::query_as_with(&sql, value)
             .fetch_one(&state.db)
             .await
             .map_err(|e| {
-                debug!("fetch vote_whitelist failed: {e}");
-                eyre!("vote whitelist not found".to_string())
+                debug!("fetch voter_list failed: {e}");
+                eyre!("voter list not found".to_string())
             })?;
         let mut vote_meta_row = VoteMetaRow {
             id: -1,
@@ -251,7 +251,7 @@ pub async fn create_vote_tx(
             tx_hash: None,
             block_number: None,
             proposal_uri: proposal_uri.to_string(),
-            whitelist_id: vote_whitelist_row.id,
+            voter_list_id: voter_list_row.id,
             candidates: vec![
                 "Abstain".to_string(),
                 "Agree".to_string(),

@@ -26,7 +26,7 @@ use crate::{
         proposal::{Proposal, ProposalSample},
         vote::{Vote, VoteRow},
         vote_meta::{VoteMeta, VoteMetaRow, VoteMetaState},
-        vote_whitelist::{VoteWhitelist, VoteWhitelistRow},
+        voter_list::{VoterList, VoterListRow},
     },
     molecules,
     smt::{Blake2bHasher, CkbSMT, SMT_VALUE},
@@ -94,18 +94,18 @@ pub async fn weight(
     Ok(ok(json!({ "weight": weight })))
 }
 
-#[utoipa::path(get, path = "/api/vote/whitelist")]
-pub async fn whitelist(State(state): State<AppView>) -> Result<impl IntoResponse, AppError> {
-    let (sql, value) = VoteWhitelist::build_select()
-        .order_by(VoteWhitelist::Created, Order::Desc)
+#[utoipa::path(get, path = "/api/vote/voter_list")]
+pub async fn voter_list(State(state): State<AppView>) -> Result<impl IntoResponse, AppError> {
+    let (sql, value) = VoterList::build_select()
+        .order_by(VoterList::Created, Order::Desc)
         .limit(1)
         .build_sqlx(PostgresQueryBuilder);
-    let row: VoteWhitelistRow = sqlx::query_as_with(&sql, value)
+    let row: VoterListRow = sqlx::query_as_with(&sql, value)
         .fetch_one(&state.db)
         .await
         .map_err(|e| {
-            debug!("fetch vote_whitelist failed: {e}");
-            eyre!("vote whitelist not found".to_string())
+            debug!("fetch voter_list failed: {e}");
+            eyre!("voter list not found".to_string())
         })?;
     Ok(ok(row))
 }
@@ -115,7 +115,7 @@ pub async fn whitelist(State(state): State<AppView>) -> Result<impl IntoResponse
 pub struct ProofQuery {
     #[validate(length(min = 1))]
     pub ckb_addr: String,
-    pub whitelist_id: String,
+    pub voter_list_id: String,
 }
 
 #[utoipa::path(get, path = "/api/vote/proof", params(ProofQuery))]
@@ -123,7 +123,7 @@ pub async fn proof(
     State(state): State<AppView>,
     Query(query): Query<ProofQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    get_proof(&state, &query.whitelist_id, &query.ckb_addr)
+    get_proof(&state, &query.voter_list_id, &query.ckb_addr)
         .await
         .map(|r| {
             ok(json!({
@@ -136,14 +136,14 @@ pub async fn proof(
 
 async fn get_proof(
     state: &AppView,
-    whitelist_id: &str,
+    voter_list_id: &str,
     ckb_addr: &str,
 ) -> Result<(Vec<u8>, Vec<u8>)> {
-    let (sql, values) = VoteWhitelist::build_select()
-        .and_where(Expr::col(VoteWhitelist::Id).eq(whitelist_id))
+    let (sql, values) = VoterList::build_select()
+        .and_where(Expr::col(VoterList::Id).eq(voter_list_id))
         .build_sqlx(PostgresQueryBuilder);
 
-    let row: VoteWhitelistRow = query_as_with(&sql, values.clone())
+    let row: VoterListRow = query_as_with(&sql, values.clone())
         .fetch_one(&state.db)
         .await
         .map_err(|e| eyre!(e))?;
@@ -184,7 +184,7 @@ async fn get_proof(
     if ret {
         Ok((smt_root_hash.as_slice().to_vec(), compiled_proof.0))
     } else {
-        Err(eyre!("Not in the whitelist"))
+        Err(eyre!("Not in the voter_list"))
     }
 }
 
@@ -323,7 +323,7 @@ pub async fn prepare(
 
     let vote_addr = get_ckb_addr_by_did(&state.ckb_client, &state.ckb_net, &body.did).await?;
 
-    let proof = get_proof(&state, &vote_meta_row.whitelist_id, &vote_addr).await?;
+    let proof = get_proof(&state, &vote_meta_row.voter_list_id, &vote_addr).await?;
 
     Ok(ok(json!({
         "vote_meta": vote_meta_row,
@@ -532,15 +532,14 @@ pub async fn build_vote_meta(
     vote_meta_row: &VoteMetaRow,
     proposal_hash: &[u8],
 ) -> Result<molecules::VoteMeta> {
-    let (sql, values) = VoteWhitelist::build_select()
-        .and_where(Expr::col(VoteWhitelist::Id).eq(vote_meta_row.whitelist_id.clone()))
+    let (sql, values) = VoterList::build_select()
+        .and_where(Expr::col(VoterList::Id).eq(vote_meta_row.voter_list_id.clone()))
         .build_sqlx(PostgresQueryBuilder);
 
-    let vote_whitelist_row: VoteWhitelistRow =
-        query_as_with(&sql, values.clone()).fetch_one(db).await?;
+    let voter_list_row: VoterListRow = query_as_with(&sql, values.clone()).fetch_one(db).await?;
 
     let mut smt_tree = CkbSMT::default();
-    for lock_hash in vote_whitelist_row.list.iter() {
+    for lock_hash in voter_list_row.list.iter() {
         if let Ok(lock_hash) = hex::decode(lock_hash)
             && let Ok(key) = TryInto::<[u8; 32]>::try_into(lock_hash.as_slice())
         {

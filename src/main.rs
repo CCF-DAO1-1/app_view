@@ -16,7 +16,7 @@ use dao::lexicon::task::Task;
 use dao::lexicon::timeline::Timeline;
 use dao::lexicon::vote::Vote;
 use dao::lexicon::vote_meta::VoteMeta;
-use dao::lexicon::vote_whitelist::VoteWhitelist;
+use dao::lexicon::voter_list::VoterList;
 use dao::relayer::subscription::RepoSubscription;
 use dao::{AppView, api, scheduler};
 use sqlx::postgres::PgPoolOptions;
@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
     Reply::init(&db).await?;
     Like::init(&db).await?;
     Profile::init(&db).await?;
-    VoteWhitelist::init(&db).await?;
+    VoterList::init(&db).await?;
     Administrator::init(&db).await?;
     VoteMeta::init(&db).await?;
     Vote::init(&db).await?;
@@ -150,7 +150,7 @@ async fn main() -> Result<()> {
         .route("/api/like/list", post(api::like::list))
         .route("/api/vote/bind_list", get(api::vote::bind_list))
         .route("/api/vote/weight", get(api::vote::weight))
-        .route("/api/vote/whitelist", get(api::vote::whitelist))
+        .route("/api/vote/voter_list", get(api::vote::voter_list))
         .route("/api/vote/proof", get(api::vote::proof))
         .route(
             "/api/vote/update_meta_tx_hash",

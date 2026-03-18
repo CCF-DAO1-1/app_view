@@ -8,4 +8,4 @@ pub mod task;
 pub mod timeline;
 pub mod vote;
 pub mod vote_meta;
-pub mod vote_whitelist;
+pub mod voter_list;

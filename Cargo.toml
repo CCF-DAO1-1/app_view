@@ -60,7 +60,7 @@ sparse-merkle-tree = { git = "https://github.com/nervosnetwork/sparse-merkle-tre
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
 tokio = { version = "1", features = ["full"] }
 tokio-cron-scheduler = "0.15"
-tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.29", features = ["native-tls"] }
 tower-http = { version = "0.6", features = ["fs", "cors", "trace", "timeout"] }
 tracing = "0.1"
 trait-variant = "0.1"

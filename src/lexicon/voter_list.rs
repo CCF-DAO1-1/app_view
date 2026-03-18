@@ -6,7 +6,7 @@ use serde::Serialize;
 use sqlx::{Executor, Pool, Postgres, query, query_with};
 
 #[derive(Iden, Debug, Clone, Copy)]
-pub enum VoteWhitelist {
+pub enum VoterList {
     Table,
     Id,
     List,
@@ -15,7 +15,7 @@ pub enum VoteWhitelist {
     Created,
 }
 
-impl VoteWhitelist {
+impl VoterList {
     pub async fn init(db: &Pool<Postgres>) -> Result<()> {
         let sql = sea_query::Table::create()
             .table(Self::Table)
@@ -85,7 +85,7 @@ impl VoteWhitelist {
 }
 
 #[derive(sqlx::FromRow, Debug, Serialize)]
-pub struct VoteWhitelistRow {
+pub struct VoterListRow {
     pub id: String,
     pub list: Vec<String>,
     pub root_hash: String,
