@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use color_eyre::{Result, eyre::eyre};
 use sea_query::PostgresQueryBuilder;
 use sea_query_sqlx::SqlxBinder;
@@ -54,8 +56,7 @@ pub async fn build_voter_list(
     let row: Vec<(String,)> = sqlx::query_as_with(&sql, values).fetch_all(&db).await?;
     let block_number = Into::<u64>::into(ckb_client.get_tip_block_number().await?);
     let did_list = row.into_iter().map(|r| r.0).collect::<Vec<String>>();
-    let mut voter_list = vec![];
-    let mut smt_tree = CkbSMT::default();
+    let mut voter_btree_set = BTreeSet::new();
     for did in did_list {
         if let Ok(ckb_addr) = ckb::get_ckb_addr_by_did(&ckb_client, &ckb_net, &did).await
             && let Ok(deposit) = indexer_bind::get_weight(
@@ -78,10 +79,7 @@ pub async fn build_voter_list(
                     .map_err(|e| eyre!(e))?;
                 let lock_script = ckb_types::packed::Script::from(address.payload());
                 let lock_hash_bytes = lock_script.calc_script_hash();
-                let lock_hash = hex::encode(lock_hash_bytes.raw_data());
-                voter_list.push(lock_hash);
-                let key: [u8; 32] = lock_hash_bytes.raw_data().to_vec().as_slice().try_into()?;
-                smt_tree.update(key.into(), SMT_VALUE.into()).ok();
+                voter_btree_set.insert(lock_hash_bytes);
             } else {
                 info!(
                     "DID: {} with CKB address: {} has weight: {}, not qualified for voter list",
@@ -90,6 +88,16 @@ pub async fn build_voter_list(
             }
         }
     }
+
+    let mut voter_list = vec![];
+    let mut smt_tree = CkbSMT::default();
+    for lock_hash_bytes in voter_btree_set.iter() {
+        let lock_hash = hex::encode(lock_hash_bytes.raw_data());
+        voter_list.push(lock_hash);
+        let key: [u8; 32] = lock_hash_bytes.raw_data().to_vec().as_slice().try_into()?;
+        smt_tree.update(key.into(), SMT_VALUE.into()).ok();
+    }
+
     let smt_root_hash = hex::encode(smt_tree.root().as_slice());
     let id = chrono::Local::now().to_rfc3339();
     info!(
