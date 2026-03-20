@@ -67,6 +67,7 @@ pub async fn build_voter_list(
                 Some(block_number),
             )
             .await
+            .map(|wp| wp.values().sum::<u64>())
         {
             if deposit > 0 {
                 info!(

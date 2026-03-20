@@ -444,14 +444,16 @@ pub async fn initiation_vote(
 
     // check proposer's weight > 10_000_000_000_000
     let ckb_addr = crate::ckb::get_ckb_addr_by_did(&state.ckb_client, &state.ckb_net, &did).await?;
-    let weight = crate::indexer_bind::get_weight(
+    let weight: u64 = crate::indexer_bind::get_weight(
         &state.ckb_client,
         state.ckb_net,
         &state.indexer_bind_url,
         &ckb_addr,
         None,
     )
-    .await?;
+    .await?
+    .values()
+    .sum();
     if weight < 10_000_000_000_000 {
         return Err(AppError::ValidateFailed(
             "not enough weight(At least 100_000 ckb)".to_string(),

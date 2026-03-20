@@ -1,5 +1,5 @@
 pub mod build_voter_list;
-mod check_vote_finished;
+pub mod check_vote_finished;
 mod check_vote_meta_tx;
 mod check_vote_tx;
 

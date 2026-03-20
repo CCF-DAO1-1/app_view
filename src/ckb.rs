@@ -222,6 +222,7 @@ pub async fn get_vote_result(
                     None,
                 )
                 .await
+                .map(|wp| wp.values().sum())
                 .unwrap_or(0);
                 result.insert(address, (i, weight));
             }

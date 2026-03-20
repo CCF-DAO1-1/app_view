@@ -196,7 +196,6 @@ pub struct VoteMetaRow {
 pub struct VoteResults {
     pub vote_sum: u64,
     pub valid_vote_sum: u64,
-    pub weight_sum: u64,
     pub valid_weight_sum: u64,
     pub valid_votes: Vec<Vec<VoteView>>,
     pub candidate_votes: Vec<u64>,

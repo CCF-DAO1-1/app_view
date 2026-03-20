@@ -20,7 +20,7 @@ use validator::Validate;
 use crate::{
     AppView,
     api::{SignedBody, SignedParam},
-    ckb::{get_ckb_addr_by_did, get_vote_result},
+    ckb::get_ckb_addr_by_did,
     error::AppError,
     lexicon::{
         proposal::{Proposal, ProposalSample},
@@ -29,6 +29,9 @@ use crate::{
         voter_list::{VoterList, VoterListRow},
     },
     molecules,
+    scheduler::check_vote_finished::{
+        build_vote_results, get_vote_end_block_number, get_vote_end_time,
+    },
     smt::{Blake2bHasher, CkbSMT, SMT_VALUE},
 };
 
@@ -398,41 +401,37 @@ pub async fn detail(
         )));
     }
 
-    let votes = if let Some(tx_hash) = &vote_meta_row.tx_hash {
-        get_vote_result(
-            &state.ckb_client,
-            state.ckb_net,
-            &state.indexer_bind_url,
-            tx_hash,
-        )
-        .await?
+    let tx_hash = if let Some(tx_hash) = &vote_meta_row.tx_hash {
+        tx_hash.clone()
     } else {
-        return Err(AppError::ValidateFailed(
-            "vote_meta have not tx_hash".to_string(),
-        ));
+        return Err(AppError::ValidateFailed("vote_meta has no tx_hash".into()));
     };
-    let vote_sum = votes.len();
-    let mut valid_vote_sum = 0;
-    let mut weight_sum = 0;
-    let mut valid_weight_sum = 0;
-    let mut candidate_votes = vec![(0, 0); vote_meta_row.candidates.len()];
-    for vote in votes {
-        weight_sum += vote.1.1;
-        if let Some(candidate_vote) = candidate_votes.get_mut(vote.1.0) {
-            valid_vote_sum += 1;
-            candidate_vote.0 += 1;
-            valid_weight_sum += vote.1.1;
-            candidate_vote.1 += vote.1.1;
-        }
-    }
+
+    let block_number = if let Some(block_number) = &vote_meta_row.block_number {
+        *block_number as u64
+    } else {
+        return Err(AppError::ValidateFailed("vote_meta has no tx_hash".into()));
+    };
+
+    let end_time = get_vote_end_time(&state, vote_meta_row.proposal_state, block_number).await?;
+    let end_block_number = get_vote_end_block_number(&state, end_time).await?;
+
+    let vote_results = build_vote_results(
+        &state,
+        Some(tx_hash),
+        &vote_meta_row.candidates,
+        end_time,
+        end_block_number,
+        false,
+    )
+    .await?;
 
     Ok(ok(json!({
         "vote_meta": vote_meta_row,
-        "vote_sum": vote_sum,
-        "valid_vote_sum": valid_vote_sum,
-        "weight_sum": weight_sum,
-        "valid_weight_sum": valid_weight_sum,
-        "candidate_votes": candidate_votes
+        "vote_sum": vote_results.vote_sum,
+        "valid_vote_sum": vote_results.valid_vote_sum,
+        "valid_weight_sum": vote_results.valid_weight_sum,
+        "candidate_votes": vote_results.candidate_votes
     })))
 }
 

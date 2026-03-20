@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use ckb_types::core::EpochNumberWithFraction;
 use ckb_types::prelude::Entity;
@@ -94,26 +94,7 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
             continue;
         };
 
-        let begin_epoch = EpochNumberWithFraction::from_full_value(
-            state
-                .ckb_client
-                .get_block_by_number(block_number.into())
-                .await?
-                .ok_or_eyre("ckb block not found")?
-                .header
-                .inner
-                .epoch
-                .into(),
-        );
-        let duration_days = match ProposalState::from(proposal_state) {
-            ProposalState::MilestoneVote | ProposalState::DelayVote => 3,
-            _ => 7,
-        };
-        let end_time = EpochNumberWithFraction::new(
-            Into::<u64>::into(begin_epoch.number()) + (6 * duration_days),
-            begin_epoch.index(),
-            begin_epoch.length(),
-        );
+        let end_time = get_vote_end_time(&state, proposal_state, block_number).await?;
         debug!(
             "check vote_meta id: {}, proposal_state: {}, end_time: {}",
             id, proposal_state, end_time,
@@ -126,121 +107,17 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
             continue;
         }
 
-        let end_epoch = state
-            .ckb_client
-            .get_epoch_by_number(end_time.number().into())
-            .await?
-            .ok_or_eyre("ckb epoch not found")?;
-        let end_block_number = Into::<u64>::into(end_epoch.start_number)
-            + (if end_time.length().is_multiple_of(end_time.index()) {
-                end_time.index() * Into::<u64>::into(end_epoch.length) / end_time.length()
-            } else {
-                end_time.index() * Into::<u64>::into(end_epoch.length) / end_time.length() + 1
-            });
-        debug!("end_block_number: {}", end_block_number);
+        let end_block_number = get_vote_end_block_number(&state, end_time).await?;
 
-        // get votes by vote_indexer
-        let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
-            tx_hash: ckb_types::H256(
-                hex::decode(tx_hash.unwrap().trim_start_matches("0x"))
-                    .unwrap()
-                    .try_into()
-                    .unwrap(),
-            ),
-            index: 0.into(),
-        }
-        .into();
-        let pubkey_hash = ckb_hash::blake2b_256(vote_meta_out_point.as_bytes());
-        let args = pubkey_hash[0..20].to_vec();
-        let args = hex::encode(args);
-        debug!("args: {}", args);
-
-        let vote_result = all_votes(
-            &state.indexer_vote_url,
-            &args,
-            end_time.number() as i64,
-            end_time.index() as i64,
-            end_time.length() as i64,
+        let mut vote_results = build_vote_results(
+            &state,
+            tx_hash,
+            &candidates,
+            end_time,
+            end_block_number,
+            true,
         )
-        .await?
-        .as_array()
-        .cloned()
-        .ok_or_eyre("vote_result is not array")?;
-        let vote_sum = vote_result.len();
-
-        let mut valid_vote_map = HashMap::<String, u64>::new();
-        {
-            let mut invalid_vote_map = HashMap::<String, u64>::new();
-            for vote_row in &vote_result {
-                let ckb_addr = vote_row
-                    .get("ckbAddress")
-                    .and_then(|v| v.as_str())
-                    .ok_or_eyre("ckb_addr not found")?;
-                let vote_index = vote_row
-                    .get("voteIndex")
-                    .and_then(|v| v.as_array())
-                    .ok_or_eyre("vote_index not found")?
-                    .first()
-                    .and_then(|i| i.as_u64())
-                    .ok_or_eyre("vote_index not found")?;
-                if let Some(vote_index) = valid_vote_map.remove(ckb_addr) {
-                    invalid_vote_map.insert(ckb_addr.to_string(), vote_index);
-                } else {
-                    if !invalid_vote_map.contains_key(ckb_addr) {
-                        valid_vote_map.insert(ckb_addr.to_string(), vote_index);
-                    }
-                }
-            }
-        }
-
-        let mut weight_sum = 0;
-        let mut valid_vote_sum = 0;
-        let mut valid_weight_sum = 0;
-        let mut valid_votes = vec![vec![]; candidates.len()];
-        let mut candidate_votes = vec![0; candidates.len()];
-        for (ckb_addr, vote_index) in valid_vote_map.into_iter() {
-            let weight = crate::indexer_bind::get_weight(
-                &state.ckb_client,
-                state.ckb_net,
-                &state.indexer_bind_url,
-                &ckb_addr,
-                Some(end_block_number),
-            )
-            .await
-            .unwrap_or(0);
-
-            weight_sum += weight;
-            if let Some(candidate_vote) = candidate_votes.get_mut(vote_index as usize) {
-                valid_vote_sum += 1;
-                valid_weight_sum += weight;
-                *candidate_vote += weight;
-            }
-            if let Some(valid_vote) = valid_votes.get_mut(vote_index as usize) {
-                let did = crate::indexer_did::ckb_did(&state.indexer_did_url, &ckb_addr)
-                    .await
-                    .unwrap_or_default()
-                    .first()
-                    .cloned()
-                    .unwrap_or_default();
-                let author = crate::api::build_author(&state, &format!("did:ckb:{did}")).await;
-                valid_vote.push(VoteView {
-                    ckb_addr: ckb_addr.to_string(),
-                    weight,
-                    vote_index: vote_index as usize,
-                    author,
-                });
-            }
-        }
-
-        let mut vote_results = VoteResults {
-            vote_sum: vote_sum as u64,
-            valid_vote_sum: valid_vote_sum as u64,
-            weight_sum,
-            valid_weight_sum,
-            valid_votes,
-            candidate_votes,
-            result: None,
-        };
+        .await?;
 
         let (sql, value) = Proposal::build_sample()
             .and_where(Expr::col(Proposal::Uri).eq(proposal_uri.clone()))
@@ -586,4 +463,180 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
         .ok();
     }
     Ok(())
+}
+
+pub async fn get_vote_end_block_number(
+    state: &AppView,
+    end_time: EpochNumberWithFraction,
+) -> Result<u64> {
+    let end_epoch = state
+        .ckb_client
+        .get_epoch_by_number(end_time.number().into())
+        .await?
+        .ok_or_eyre("ckb epoch not found")?;
+    let end_block_number = Into::<u64>::into(end_epoch.start_number)
+        + (if end_time.length().is_multiple_of(end_time.index()) {
+            end_time.index() * Into::<u64>::into(end_epoch.length) / end_time.length()
+        } else {
+            end_time.index() * Into::<u64>::into(end_epoch.length) / end_time.length() + 1
+        });
+    debug!("end_block_number: {}", end_block_number);
+    Ok(end_block_number)
+}
+
+pub async fn get_vote_end_time(
+    state: &AppView,
+    proposal_state: i32,
+    block_number: u64,
+) -> Result<EpochNumberWithFraction> {
+    let begin_epoch = EpochNumberWithFraction::from_full_value(
+        state
+            .ckb_client
+            .get_block_by_number(block_number.into())
+            .await?
+            .ok_or_eyre("ckb block not found")?
+            .header
+            .inner
+            .epoch
+            .into(),
+    );
+    let duration_days = match ProposalState::from(proposal_state) {
+        ProposalState::MilestoneVote | ProposalState::DelayVote => 3,
+        _ => 7,
+    };
+    let end_time = EpochNumberWithFraction::new(
+        Into::<u64>::into(begin_epoch.number()) + (6 * duration_days),
+        begin_epoch.index(),
+        begin_epoch.length(),
+    );
+    Ok(end_time)
+}
+
+pub async fn build_vote_results(
+    state: &AppView,
+    tx_hash: Option<String>,
+    candidates: &[String],
+    end_time: EpochNumberWithFraction,
+    end_block_number: u64,
+    detail: bool,
+) -> Result<VoteResults> {
+    let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
+        tx_hash: ckb_types::H256(
+            hex::decode(tx_hash.unwrap().trim_start_matches("0x"))
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        ),
+        index: 0.into(),
+    }
+    .into();
+    let pubkey_hash = ckb_hash::blake2b_256(vote_meta_out_point.as_bytes());
+    let args = pubkey_hash[0..20].to_vec();
+    let args = hex::encode(args);
+    debug!("args: {}", args);
+    let vote_result = all_votes(
+        &state.indexer_vote_url,
+        &args,
+        end_time.number() as i64,
+        end_time.index() as i64,
+        end_time.length() as i64,
+    )
+    .await?
+    .as_array()
+    .cloned()
+    .ok_or_eyre("vote_result is not array")?;
+    let vote_sum = vote_result.len();
+    let mut valid_vote_map = HashMap::<String, u64>::new();
+    {
+        let mut invalid_vote_map = HashMap::<String, u64>::new();
+        for vote_row in &vote_result {
+            let ckb_addr = vote_row
+                .get("ckbAddress")
+                .and_then(|v| v.as_str())
+                .ok_or_eyre("ckb_addr not found")?;
+            let vote_index = vote_row
+                .get("voteIndex")
+                .and_then(|v| v.as_array())
+                .ok_or_eyre("vote_index not found")?
+                .first()
+                .and_then(|i| i.as_u64())
+                .ok_or_eyre("vote_index not found")?;
+            if let Some(vote_index) = valid_vote_map.remove(ckb_addr) {
+                invalid_vote_map.insert(ckb_addr.to_string(), vote_index);
+            } else {
+                if !invalid_vote_map.contains_key(ckb_addr) {
+                    valid_vote_map.insert(ckb_addr.to_string(), vote_index);
+                }
+            }
+        }
+    }
+    let mut vote_detail_map = HashMap::<(String, String), (usize, u64)>::new();
+    let mut self_weight_addr_set = HashSet::<String>::new();
+    for (voter_ckb_addr, vote_index) in valid_vote_map {
+        let weight_map = crate::indexer_bind::get_weight(
+            &state.ckb_client,
+            state.ckb_net,
+            &state.indexer_bind_url,
+            &voter_ckb_addr,
+            Some(end_block_number),
+        )
+        .await
+        .unwrap_or_default();
+
+        for (weight_addr, weight) in weight_map {
+            vote_detail_map.insert(
+                (voter_ckb_addr.clone(), weight_addr.clone()),
+                (vote_index as usize, weight),
+            );
+            if weight_addr == voter_ckb_addr {
+                self_weight_addr_set.insert(weight_addr);
+            }
+        }
+    }
+    vote_detail_map.retain(|(voter_ckb_addr, weight_addr), _| {
+        self_weight_addr_set.contains(weight_addr) && voter_ckb_addr != weight_addr
+    });
+    let mut voter_vote_map = HashMap::<String, (usize, u64)>::new();
+    for ((voter_ckb_addr, _), (vote_index, weight)) in vote_detail_map {
+        if let Some((_, weight_sum)) = voter_vote_map.get_mut(&voter_ckb_addr) {
+            *weight_sum += weight;
+        } else {
+            voter_vote_map.insert(voter_ckb_addr, (vote_index, weight));
+        }
+    }
+    let mut valid_vote_sum = 0;
+    let mut valid_weight_sum = 0;
+    let mut valid_votes = vec![vec![]; candidates.len()];
+    let mut candidate_weight_sum = vec![0; candidates.len()];
+    for (voter_ckb_addr, (vote_index, weight)) in voter_vote_map.into_iter() {
+        if let Some(weight_sum) = candidate_weight_sum.get_mut(vote_index) {
+            valid_vote_sum += 1;
+            valid_weight_sum += weight;
+            *weight_sum += weight;
+        }
+        if detail && let Some(valid_vote) = valid_votes.get_mut(vote_index) {
+            let did = crate::indexer_did::ckb_did(&state.indexer_did_url, &voter_ckb_addr)
+                .await
+                .unwrap_or_default()
+                .first()
+                .cloned()
+                .unwrap_or_default();
+            let author = crate::api::build_author(state, &format!("did:ckb:{did}")).await;
+            valid_vote.push(VoteView {
+                ckb_addr: voter_ckb_addr.to_string(),
+                weight,
+                vote_index,
+                author,
+            });
+        }
+    }
+
+    Ok(VoteResults {
+        vote_sum: vote_sum as u64,
+        valid_vote_sum: valid_vote_sum as u64,
+        valid_weight_sum,
+        valid_votes,
+        candidate_votes: candidate_weight_sum,
+        result: None,
+    })
 }

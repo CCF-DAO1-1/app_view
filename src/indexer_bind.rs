@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use ckb_sdk::CkbRpcAsyncClient;
 use color_eyre::{
@@ -66,14 +66,17 @@ pub async fn get_weight(
     indexer_bind_url: &str,
     ckb_addr: &str,
     until_block_number: Option<u64>,
-) -> Result<u64> {
+) -> Result<HashMap<String, u64>> {
+    let mut weight_map = HashMap::new();
     let from_list = if let Some(until_block_number) = until_block_number {
         query_by_to_at_height(indexer_bind_url, ckb_addr, until_block_number).await?
     } else {
         query_by_to(indexer_bind_url, ckb_addr).await?
     };
-    let mut weight =
-        get_nervos_dao_deposit(ckb_client, ckb_net, ckb_addr, until_block_number).await?;
+    weight_map.insert(
+        ckb_addr.to_string(),
+        get_nervos_dao_deposit(ckb_client, ckb_net, ckb_addr, until_block_number).await?,
+    );
 
     for from in from_list
         .as_array()
@@ -89,7 +92,7 @@ pub async fn get_weight(
         }
         let nervos_dao_deposit =
             get_nervos_dao_deposit(ckb_client, ckb_net, from, until_block_number).await?;
-        weight += nervos_dao_deposit;
+        weight_map.insert(from.to_string(), nervos_dao_deposit);
     }
-    Ok(weight)
+    Ok(weight_map)
 }
