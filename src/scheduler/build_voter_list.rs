@@ -92,10 +92,12 @@ pub async fn build_voter_list(
     let mut voter_list = vec![];
     let mut smt_tree = CkbSMT::default();
     for lock_hash_bytes in voter_btree_set.iter() {
-        let lock_hash = hex::encode(lock_hash_bytes.raw_data());
-        voter_list.push(lock_hash);
         let key: [u8; 32] = lock_hash_bytes.raw_data().to_vec().as_slice().try_into()?;
-        smt_tree.update(key.into(), SMT_VALUE.into()).ok();
+        smt_tree
+            .update(key.into(), SMT_VALUE.into())
+            .map_err(|e| eyre!(e))?;
+        let lock_hash = hex::encode(key);
+        voter_list.push(lock_hash);
     }
 
     let smt_root_hash = hex::encode(smt_tree.root().as_slice());

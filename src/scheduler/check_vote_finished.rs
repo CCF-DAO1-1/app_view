@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ckb_types::core::EpochNumberWithFraction;
 use ckb_types::prelude::Entity;
 use color_eyre::{Result, eyre::OptionExt};
@@ -165,28 +167,43 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
         .cloned()
         .ok_or_eyre("vote_result is not array")?;
         let vote_sum = vote_result.len();
+
+        let mut valid_vote_map = HashMap::<String, u64>::new();
+        {
+            let mut invalid_vote_map = HashMap::<String, u64>::new();
+            for vote_row in &vote_result {
+                let ckb_addr = vote_row
+                    .get("ckbAddress")
+                    .and_then(|v| v.as_str())
+                    .ok_or_eyre("ckb_addr not found")?;
+                let vote_index = vote_row
+                    .get("voteIndex")
+                    .and_then(|v| v.as_array())
+                    .ok_or_eyre("vote_index not found")?
+                    .first()
+                    .and_then(|i| i.as_u64())
+                    .ok_or_eyre("vote_index not found")?;
+                if let Some(vote_index) = valid_vote_map.remove(ckb_addr) {
+                    invalid_vote_map.insert(ckb_addr.to_string(), vote_index);
+                } else {
+                    if !invalid_vote_map.contains_key(ckb_addr) {
+                        valid_vote_map.insert(ckb_addr.to_string(), vote_index);
+                    }
+                }
+            }
+        }
+
         let mut weight_sum = 0;
         let mut valid_vote_sum = 0;
         let mut valid_weight_sum = 0;
         let mut valid_votes = vec![vec![]; candidates.len()];
         let mut candidate_votes = vec![0; candidates.len()];
-        for vote in vote_result {
-            let ckb_addr = vote
-                .get("ckbAddress")
-                .and_then(|v| v.as_str())
-                .ok_or_eyre("ckb_addr not found")?;
-            let vote_index = vote
-                .get("voteIndex")
-                .and_then(|v| v.as_array())
-                .ok_or_eyre("vote_index not found")?
-                .first()
-                .and_then(|i| i.as_i64())
-                .ok_or_eyre("vote_index not found")?;
+        for (ckb_addr, vote_index) in valid_vote_map.into_iter() {
             let weight = crate::indexer_bind::get_weight(
                 &state.ckb_client,
                 state.ckb_net,
                 &state.indexer_bind_url,
-                ckb_addr,
+                &ckb_addr,
                 Some(end_block_number),
             )
             .await
@@ -199,7 +216,7 @@ pub async fn check_vote_meta_finished(state: AppView) -> Result<()> {
                 *candidate_vote += weight;
             }
             if let Some(valid_vote) = valid_votes.get_mut(vote_index as usize) {
-                let did = crate::indexer_did::ckb_did(&state.indexer_did_url, ckb_addr)
+                let did = crate::indexer_did::ckb_did(&state.indexer_did_url, &ckb_addr)
                     .await
                     .unwrap_or_default()
                     .first()
