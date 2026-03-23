@@ -594,7 +594,7 @@ pub async fn build_vote_results(
         }
     }
     vote_detail_map.retain(|(voter_ckb_addr, weight_addr), _| {
-        self_weight_addr_set.contains(weight_addr) && voter_ckb_addr != weight_addr
+        !self_weight_addr_set.contains(weight_addr) || voter_ckb_addr == weight_addr
     });
     let mut voter_vote_map = HashMap::<String, (usize, u64)>::new();
     for ((voter_ckb_addr, _), (vote_index, weight)) in vote_detail_map {
