@@ -9,7 +9,7 @@ pub async fn query_dao_stake_until_height(
 ) -> Result<HashMap<String, u64>> {
     reqwest::Client::new()
         .get(format!(
-            "{url}/query_dao_stake_until_height?until_height={until_height}&ckb_list={ckb_addrs}"
+            "{url}/dao-stake-set?until_height={until_height}&ckb_list={ckb_addrs}"
         ))
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
