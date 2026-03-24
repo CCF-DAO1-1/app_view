@@ -56,6 +56,8 @@ pub struct Args {
     apidoc: bool,
     #[clap(short, long, default_value = "Testnet")]
     ckb_net: String,
+    #[clap(long, default_value = "10000")]
+    build_voter_list_interval: u64,
 }
 
 #[tokio::main]
@@ -101,6 +103,7 @@ async fn main() -> Result<()> {
                 ckb_sdk::NetworkType::Testnet
             }
         },
+        build_voter_list_interval: args.build_voter_list_interval,
     };
 
     // reconnect

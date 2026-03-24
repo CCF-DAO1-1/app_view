@@ -32,6 +32,7 @@ pub struct AppView {
     pub indexer_dao_url: String,
     pub ckb_client: ckb_sdk::CkbRpcAsyncClient,
     pub ckb_net: ckb_sdk::NetworkType,
+    pub build_voter_list_interval: u64,
 }
 
 pub enum AddressPayloadOption {

@@ -1,11 +1,14 @@
 use std::collections::{BTreeSet, HashSet};
 
 use color_eyre::{Result, eyre::eyre};
+use sea_query::{Expr, ExprTrait, PostgresQueryBuilder};
+use sea_query_sqlx::SqlxBinder;
+use sqlx::query_as_with;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use crate::{
     AppView, indexer_bind,
-    lexicon::voter_list::VoterList,
+    lexicon::voter_list::{VoterList, VoterListRow},
     smt::{CkbSMT, SMT_VALUE},
 };
 
@@ -18,11 +21,20 @@ pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<
             let ckb_net = app.ckb_net;
             let indexer_bind_url = app.indexer_bind_url.clone();
             let indexer_dao_url = app.indexer_dao_url.clone();
+            let build_voter_list_interval = app.build_voter_list_interval;
+
             async move {
-                build_voter_list(db, ckb_client, ckb_net, indexer_bind_url, indexer_dao_url)
-                    .await
-                    .map_err(|e| error!("job run failed: {e}"))
-                    .ok();
+                build_voter_list(
+                    db,
+                    ckb_client,
+                    ckb_net,
+                    indexer_bind_url,
+                    indexer_dao_url,
+                    build_voter_list_interval,
+                )
+                .await
+                .map_err(|e| error!("job run failed: {e}"))
+                .ok();
             }
         })
     })?;
@@ -48,8 +60,22 @@ pub async fn build_voter_list(
     ckb_net: ckb_sdk::NetworkType,
     indexer_bind_url: String,
     indexer_dao_url: String,
+    build_voter_list_interval: u64,
 ) -> Result<()> {
     let block_number = Into::<u64>::into(ckb_client.get_tip_block_number().await?);
+
+    let block_number = block_number - (block_number % build_voter_list_interval);
+    let (sql, values) = VoterList::build_select()
+        .and_where(Expr::col(VoterList::BlockNumber).eq(block_number as i64))
+        .build_sqlx(PostgresQueryBuilder);
+    let voter_list_row: Option<VoterListRow> = query_as_with(&sql, values.clone())
+        .fetch_one(&db)
+        .await
+        .ok();
+    if voter_list_row.is_some() {
+        return Ok(());
+    }
+
     let did_set = crate::indexer_did::did_set(&indexer_bind_url, block_number).await?;
     let ckb_addrs: HashSet<String> = did_set.values().cloned().collect();
     let mut voter_btree_set = BTreeSet::new();
