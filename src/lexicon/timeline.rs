@@ -53,6 +53,8 @@ pub enum TimelineType {
     Rectification,
     /// 21 创建投票交易失败
     VoteMetaTxChanged,
+    /// 22 创建投票交易超时
+    VoteMetaTxTimeout,
 }
 
 #[derive(Iden, Debug, Clone, Copy)]
