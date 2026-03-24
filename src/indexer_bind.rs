@@ -87,10 +87,27 @@ pub async fn get_weight(
     if let Some(pw_lock_addr) = crate::ckb::pw_lock(ckb_net, ckb_addr) {
         ckb_addrs.insert(pw_lock_addr.to_string());
     }
-    crate::indexer_dao::query_dao_stake_until_height(
-        indexer_dao_url,
-        until_block_number.unwrap_or(u64::MAX),
-        &ckb_addrs.into_iter().collect::<Vec<_>>().join(","),
-    )
-    .await
+    if ckb_addrs.len() > 20 {
+        let mut weight_map = HashMap::<String, u64>::new();
+        // every 20 addresses in one batch to avoid too long url query
+        let ckb_addr_vec: Vec<String> = ckb_addrs.into_iter().collect();
+        for ckb_addr_batch in ckb_addr_vec.chunks(20) {
+            let batch_weight_map = crate::indexer_dao::query_dao_stake_until_height(
+                indexer_dao_url,
+                until_block_number.unwrap_or(u64::MAX),
+                &ckb_addr_batch.join(","),
+            )
+            .await?;
+            weight_map.extend(batch_weight_map);
+        }
+
+        Ok(weight_map)
+    } else {
+        crate::indexer_dao::query_dao_stake_until_height(
+            indexer_dao_url,
+            until_block_number.unwrap_or(u64::MAX),
+            &ckb_addrs.into_iter().collect::<Vec<_>>().join(","),
+        )
+        .await
+    }
 }
