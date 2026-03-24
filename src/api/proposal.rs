@@ -445,9 +445,9 @@ pub async fn initiation_vote(
     // check proposer's weight > 10_000_000_000_000
     let ckb_addr = crate::ckb::get_ckb_addr_by_did(&state.ckb_client, &state.ckb_net, &did).await?;
     let weight: u64 = crate::indexer_bind::get_weight(
-        &state.ckb_client,
         state.ckb_net,
         &state.indexer_bind_url,
+        &state.indexer_dao_url,
         &ckb_addr,
         None,
     )

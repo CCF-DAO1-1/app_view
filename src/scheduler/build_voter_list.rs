@@ -1,13 +1,11 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use color_eyre::{Result, eyre::eyre};
-use sea_query::PostgresQueryBuilder;
-use sea_query_sqlx::SqlxBinder;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use crate::{
-    AppView, ckb, indexer_bind,
-    lexicon::{profile::Profile, voter_list::VoterList},
+    AppView, indexer_bind,
+    lexicon::voter_list::VoterList,
     smt::{CkbSMT, SMT_VALUE},
 };
 
@@ -19,8 +17,9 @@ pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<
             let ckb_client = app.ckb_client.clone();
             let ckb_net = app.ckb_net;
             let indexer_bind_url = app.indexer_bind_url.clone();
+            let indexer_dao_url = app.indexer_dao_url.clone();
             async move {
-                build_voter_list(db, ckb_client, ckb_net, indexer_bind_url)
+                build_voter_list(db, ckb_client, ckb_net, indexer_bind_url, indexer_dao_url)
                     .await
                     .map_err(|e| error!("job run failed: {e}"))
                     .ok();
@@ -48,31 +47,27 @@ pub async fn build_voter_list(
     ckb_client: ckb_sdk::CkbRpcAsyncClient,
     ckb_net: ckb_sdk::NetworkType,
     indexer_bind_url: String,
+    indexer_dao_url: String,
 ) -> Result<()> {
-    let (sql, values) = sea_query::Query::select()
-        .columns([(Profile::Table, Profile::Did)])
-        .from(Profile::Table)
-        .build_sqlx(PostgresQueryBuilder);
-    let row: Vec<(String,)> = sqlx::query_as_with(&sql, values).fetch_all(&db).await?;
     let block_number = Into::<u64>::into(ckb_client.get_tip_block_number().await?);
-    let did_list = row.into_iter().map(|r| r.0).collect::<Vec<String>>();
+    let did_set = crate::indexer_did::did_set(&indexer_bind_url, block_number).await?;
+    let ckb_addrs: HashSet<String> = did_set.values().cloned().collect();
     let mut voter_btree_set = BTreeSet::new();
-    for did in did_list {
-        if let Ok(ckb_addr) = ckb::get_ckb_addr_by_did(&ckb_client, &ckb_net, &did).await
-            && let Ok(deposit) = indexer_bind::get_weight(
-                &ckb_client,
-                ckb_net,
-                &indexer_bind_url,
-                &ckb_addr,
-                Some(block_number),
-            )
-            .await
-            .map(|wp| wp.values().sum::<u64>())
+    for ckb_addr in ckb_addrs {
+        if let Ok(deposit) = indexer_bind::get_weight(
+            ckb_net,
+            &indexer_bind_url,
+            &indexer_dao_url,
+            &ckb_addr,
+            Some(block_number),
+        )
+        .await
+        .map(|wp| wp.values().sum::<u64>())
         {
             if deposit > 0 {
                 info!(
-                    "DID: {} with CKB address: {} has weight: {}, added to voter list",
-                    did, ckb_addr, deposit
+                    "CKB address: {} has weight: {}, added to voter list",
+                    ckb_addr, deposit
                 );
                 let address = crate::AddressParser::default()
                     .set_network(ckb_net)
@@ -83,8 +78,8 @@ pub async fn build_voter_list(
                 voter_btree_set.insert(lock_hash_bytes);
             } else {
                 info!(
-                    "DID: {} with CKB address: {} has weight: {}, not qualified for voter list",
-                    did, ckb_addr, deposit
+                    "CKB address: {} has weight: {}, not qualified for voter list",
+                    ckb_addr, deposit
                 );
             }
         }

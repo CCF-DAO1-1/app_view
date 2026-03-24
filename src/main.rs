@@ -47,6 +47,8 @@ pub struct Args {
     #[clap(short, long)]
     indexer_vote_url: String,
     #[clap(short, long)]
+    indexer_dao_url: String,
+    #[clap(short, long)]
     relayer: String,
     #[clap(short, long)]
     pds: String,
@@ -88,6 +90,7 @@ async fn main() -> Result<()> {
         indexer_bind_url: args.indexer_bind_url.clone(),
         indexer_did_url: args.indexer_did_url.clone(),
         indexer_vote_url: args.indexer_vote_url.clone(),
+        indexer_dao_url: args.indexer_dao_url.clone(),
         ckb_client,
         ckb_net: match args.ckb_net.to_lowercase().as_str() {
             "mainnet" => ckb_sdk::NetworkType::Mainnet,

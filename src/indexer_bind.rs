@@ -1,13 +1,13 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
-use ckb_sdk::CkbRpcAsyncClient;
 use color_eyre::{
     Result,
     eyre::{OptionExt, eyre},
 };
 use serde_json::Value;
-
-use crate::ckb::get_nervos_dao_deposit;
 
 pub async fn query_by_to(url: &str, to: &str) -> Result<Value> {
     reqwest::Client::new()
@@ -61,38 +61,36 @@ pub async fn query_by_from(url: &str, from: &str) -> Result<Value> {
 }
 
 pub async fn get_weight(
-    ckb_client: &CkbRpcAsyncClient,
     ckb_net: ckb_sdk::NetworkType,
     indexer_bind_url: &str,
+    indexer_dao_url: &str,
     ckb_addr: &str,
     until_block_number: Option<u64>,
 ) -> Result<HashMap<String, u64>> {
-    let mut weight_map = HashMap::new();
     let from_list = if let Some(until_block_number) = until_block_number {
         query_by_to_at_height(indexer_bind_url, ckb_addr, until_block_number).await?
     } else {
         query_by_to(indexer_bind_url, ckb_addr).await?
     };
-    weight_map.insert(
-        ckb_addr.to_string(),
-        get_nervos_dao_deposit(ckb_client, ckb_net, ckb_addr, until_block_number).await?,
-    );
-
-    for from in from_list
+    let mut ckb_addrs: HashSet<String> = from_list
         .as_array()
         .ok_or_eyre("from_list is not an array")?
-    {
-        debug!("from: {:?}", from);
-        let from = from
-            .get("from")
-            .and_then(|f| f.as_str())
-            .ok_or_eyre("missing from field")?;
-        if from == ckb_addr {
-            continue;
-        }
-        let nervos_dao_deposit =
-            get_nervos_dao_deposit(ckb_client, ckb_net, from, until_block_number).await?;
-        weight_map.insert(from.to_string(), nervos_dao_deposit);
+        .iter()
+        .filter_map(|from| {
+            from.get("from")
+                .and_then(|f| f.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
+    ckb_addrs.insert(ckb_addr.to_string());
+    // PWLock
+    if let Some(pw_lock_addr) = crate::ckb::pw_lock(ckb_net, ckb_addr) {
+        ckb_addrs.insert(pw_lock_addr.to_string());
     }
-    Ok(weight_map)
+    crate::indexer_dao::query_dao_stake_until_height(
+        indexer_dao_url,
+        until_block_number.unwrap_or(u64::MAX),
+        &ckb_addrs.into_iter().collect::<Vec<_>>().join(","),
+    )
+    .await
 }

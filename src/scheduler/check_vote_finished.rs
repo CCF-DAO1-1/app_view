@@ -574,9 +574,9 @@ pub async fn build_vote_results(
     let mut self_weight_addr_set = HashSet::<String>::new();
     for (voter_ckb_addr, vote_index) in valid_vote_map {
         let weight_map = crate::indexer_bind::get_weight(
-            &state.ckb_client,
             state.ckb_net,
             &state.indexer_bind_url,
+            &state.indexer_dao_url,
             &voter_ckb_addr,
             Some(end_block_number),
         )

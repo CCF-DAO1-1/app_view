@@ -9,6 +9,7 @@ pub mod atproto;
 pub mod ckb;
 pub mod error;
 pub mod indexer_bind;
+pub mod indexer_dao;
 pub mod indexer_did;
 pub mod indexer_vote;
 pub mod lexicon;
@@ -28,6 +29,7 @@ pub struct AppView {
     pub indexer_bind_url: String,
     pub indexer_did_url: String,
     pub indexer_vote_url: String,
+    pub indexer_dao_url: String,
     pub ckb_client: ckb_sdk::CkbRpcAsyncClient,
     pub ckb_net: ckb_sdk::NetworkType,
 }
