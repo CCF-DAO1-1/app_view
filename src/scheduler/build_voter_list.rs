@@ -7,7 +7,7 @@ use sqlx::query_as_with;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use crate::{
-    AppView, indexer_bind,
+    AppView,
     lexicon::voter_list::{VoterList, VoterListRow},
     smt::{CkbSMT, SMT_VALUE},
 };
@@ -21,13 +21,14 @@ pub async fn job(scheduler: &JobScheduler, app: &AppView, cron: &str) -> Result<
             let ckb_net = app.ckb_net;
             let indexer_bind_url = app.indexer_bind_url.clone();
             let indexer_dao_url = app.indexer_dao_url.clone();
+            let indexer_did_url = app.indexer_did_url.clone();
             let build_voter_list_interval = app.build_voter_list_interval;
-
             async move {
                 build_voter_list(
                     db,
                     ckb_client,
                     ckb_net,
+                    indexer_did_url,
                     indexer_bind_url,
                     indexer_dao_url,
                     build_voter_list_interval,
@@ -58,6 +59,7 @@ pub async fn build_voter_list(
     db: sqlx::Pool<sqlx::Postgres>,
     ckb_client: ckb_sdk::CkbRpcAsyncClient,
     ckb_net: ckb_sdk::NetworkType,
+    indexer_did_url: String,
     indexer_bind_url: String,
     indexer_dao_url: String,
     build_voter_list_interval: u64,
@@ -76,11 +78,11 @@ pub async fn build_voter_list(
         return Ok(());
     }
 
-    let did_set = crate::indexer_did::did_set(&indexer_bind_url, block_number).await?;
+    let did_set = crate::indexer_did::did_set(&indexer_did_url, block_number).await?;
     let ckb_addrs: HashSet<String> = did_set.values().cloned().collect();
     let mut voter_btree_set = BTreeSet::new();
     for ckb_addr in ckb_addrs {
-        if let Ok(deposit) = indexer_bind::get_weight(
+        if let Ok(deposit) = crate::indexer_bind::get_weight(
             ckb_net,
             &indexer_bind_url,
             &indexer_dao_url,

@@ -86,14 +86,16 @@ pub async fn weight(
         .validate()
         .map_err(|e| AppError::ValidateFailed(e.to_string()))?;
 
-    let weight = crate::indexer_bind::get_weight(
+    let weight: u64 = crate::indexer_bind::get_weight(
         state.ckb_net,
         &state.indexer_bind_url,
         &state.indexer_dao_url,
         &query.ckb_addr,
         None,
     )
-    .await?;
+    .await?
+    .values()
+    .sum();
     Ok(ok(json!({ "weight": weight })))
 }
 

@@ -4,7 +4,7 @@ use color_eyre::{Result, eyre::eyre};
 
 pub async fn query_dao_stake_until_height(
     url: &str,
-    until_height: u64,
+    until_height: i64,
     ckb_addrs: &str,
 ) -> Result<HashMap<String, u64>> {
     reqwest::Client::new()
