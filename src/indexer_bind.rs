@@ -94,8 +94,8 @@ pub async fn get_weight(
         for ckb_addr_batch in ckb_addr_vec.chunks(20) {
             let batch_weight_map = crate::indexer_dao::query_dao_stake_until_height(
                 indexer_dao_url,
-                until_block_number.map(|n| n as i64).unwrap_or(i64::MAX),
-                &ckb_addr_batch.join(","),
+                until_block_number,
+                ckb_addr_batch,
             )
             .await?;
             weight_map.extend(batch_weight_map);
@@ -105,8 +105,8 @@ pub async fn get_weight(
     } else {
         crate::indexer_dao::query_dao_stake_until_height(
             indexer_dao_url,
-            until_block_number.map(|n| n as i64).unwrap_or(i64::MAX),
-            &ckb_addrs.into_iter().collect::<Vec<_>>().join(","),
+            until_block_number,
+            &ckb_addrs.into_iter().collect::<Vec<_>>(),
         )
         .await
     }
