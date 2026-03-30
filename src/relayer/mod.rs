@@ -1,8 +1,9 @@
 use atrium_api::com::atproto::sync::subscribe_repos::Commit;
 use atrium_repo::{Repository, blockstore::CarStore};
 use color_eyre::Result;
+use sea_query::{Expr, ExprTrait, PostgresQueryBuilder};
+use sea_query_sqlx::SqlxBinder;
 use serde_json::Value;
-use sqlx::{Executor, query};
 
 use crate::{
     AppView,
@@ -147,7 +148,7 @@ impl CommitHandler for AppView {
                 }
                 "delete" => match collection {
                     NSID_PROFILE => {
-                        profile_to_delete.push(uri.clone());
+                        profile_to_delete.push(repo_str);
                         info!("Marked profile for deletion: {}", uri);
                     }
                     NSID_PROPOSAL => {
@@ -169,60 +170,48 @@ impl CommitHandler for AppView {
         }
 
         if !profile_to_delete.is_empty() {
-            self.db
-                .execute(query(&format!(
-                    "DELETE FROM profile WHERE uri IN ({})",
-                    profile_to_delete
-                        .iter()
-                        .map(|uri| format!("'{uri}'"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )))
+            let (sql, values) = sea_query::Query::delete()
+                .from_table(Profile::Table)
+                .and_where(Expr::col(Profile::Did).is_in(profile_to_delete))
+                .build_sqlx(PostgresQueryBuilder);
+            sqlx::query_with(&sql, values)
+                .fetch_one(&self.db)
                 .await
                 .map_err(|e| error!("sql execute failed: {e}"))
                 .ok();
         }
 
         if !proposal_to_delete.is_empty() {
-            self.db
-                .execute(query(&format!(
-                    "DELETE FROM proposal WHERE uri IN ({})",
-                    proposal_to_delete
-                        .iter()
-                        .map(|uri| format!("'{uri}'"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )))
+            let (sql, values) = sea_query::Query::delete()
+                .from_table(Proposal::Table)
+                .and_where(Expr::col(Proposal::Uri).is_in(proposal_to_delete))
+                .build_sqlx(PostgresQueryBuilder);
+            sqlx::query_with(&sql, values)
+                .fetch_one(&self.db)
                 .await
                 .map_err(|e| error!("sql execute failed: {e}"))
                 .ok();
         }
 
         if !reply_to_delete.is_empty() {
-            self.db
-                .execute(query(&format!(
-                    "DELETE FROM reply WHERE uri IN ({})",
-                    reply_to_delete
-                        .iter()
-                        .map(|uri| format!("'{uri}'"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )))
+            let (sql, values) = sea_query::Query::delete()
+                .from_table(Reply::Table)
+                .and_where(Expr::col(Reply::Uri).is_in(reply_to_delete))
+                .build_sqlx(PostgresQueryBuilder);
+            sqlx::query_with(&sql, values)
+                .fetch_one(&self.db)
                 .await
                 .map_err(|e| error!("sql execute failed: {e}"))
                 .ok();
         }
 
         if !like_to_delete.is_empty() {
-            self.db
-                .execute(query(&format!(
-                    "DELETE FROM like WHERE uri IN ({})",
-                    like_to_delete
-                        .iter()
-                        .map(|uri| format!("'{uri}'"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )))
+            let (sql, values) = sea_query::Query::delete()
+                .from_table(Like::Table)
+                .and_where(Expr::col(Like::Uri).is_in(like_to_delete))
+                .build_sqlx(PostgresQueryBuilder);
+            sqlx::query_with(&sql, values)
+                .fetch_one(&self.db)
                 .await
                 .map_err(|e| error!("sql execute failed: {e}"))
                 .ok();
