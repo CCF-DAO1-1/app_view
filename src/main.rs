@@ -17,7 +17,7 @@ use dao::lexicon::timeline::Timeline;
 use dao::lexicon::vote::Vote;
 use dao::lexicon::vote_meta::VoteMeta;
 use dao::lexicon::voter_list::VoterList;
-use dao::relayer::subscription::{create_last_seq, RepoSubscription};
+use dao::relayer::subscription::{create_last_seq, run_with_reconnect};
 use dao::{AppView, api, scheduler};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
@@ -110,22 +110,7 @@ async fn main() -> Result<()> {
     let app_ = app.clone();
     let relayer = args.relayer.clone();
     tokio::spawn(async move {
-        loop {
-            let cursor = if app_.last_seq.load(std::sync::atomic::Ordering::SeqCst) > 0 {
-                Some(app_.last_seq.load(std::sync::atomic::Ordering::SeqCst))
-            } else {
-                None
-            };
-            match RepoSubscription::new(&relayer, cursor).await {
-                Ok(mut sub) => match sub.run(app_.clone()).await {
-                    Ok(_) => info!("Subscription ended successfully."),
-                    Err(e) => error!("{e}"),
-                },
-                Err(e) => error!("{e}"),
-            }
-            info!("Reconnecting in 1 seconds...");
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        }
+        run_with_reconnect(relayer, app_).await;
     });
 
     scheduler::init_task_scheduler(&app).await?;

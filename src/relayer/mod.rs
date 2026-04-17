@@ -25,7 +25,6 @@ pub mod subscription;
 
 impl CommitHandler for AppView {
     async fn handle_commit(&self, commit: &Commit, seq: i64) -> Result<()> {
-        self.last_seq.store(seq, std::sync::atomic::Ordering::SeqCst);
         debug!("Commit seq={}: {:?}", seq, commit.commit);
 
         let mut repo = Repository::open(
@@ -217,6 +216,9 @@ impl CommitHandler for AppView {
                 .map_err(|e| error!("sql execute failed: {e}"))
                 .ok();
         }
+
+        self.last_seq
+            .store(seq, std::sync::atomic::Ordering::SeqCst);
 
         Ok(())
     }
