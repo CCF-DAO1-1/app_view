@@ -77,7 +77,7 @@ async fn handle_commit(&self, commit: &Commit, seq: i64) -> Result<()> {
 当前实现使用**数据库持久化** cursor 存储：
 - ✅ 同进程内重连不会丢失消息
 - ✅ 进程重启后从断点继续（读取数据库中的 cursor）
-- ✅ 每 100 个 commit 异步持久化一次，减少数据库压力
+- ✅ 每 10 个 commit 异步持久化一次，平衡性能与数据安全
 
 ### Migration
 
@@ -97,20 +97,21 @@ ON CONFLICT (name) DO NOTHING;
 
 ### 持久化策略
 
-每 100 个 commit 异步写入数据库一次，平衡数据安全性与性能：
+每 10 个 commit 异步写入数据库一次，平衡性能与数据安全：
 
 ```rust
 async fn handle_commit(&self, commit: &Commit, seq: i64) -> Result<()> {
     self.last_seq.store(seq, Ordering::SeqCst);
     
-    if seq % 100 == 0 {
+    if seq % 10 == 0 {
         CursorState::set_seq(&self.db, "relayer", seq).await.ok();
     }
     Ok(())
 }
 ```
 
-如需更严格的数据保证，可调整 `seq % 100` 为 `seq % 10` 或每次 commit 都写入。
+如需更严格的数据保证，可调整为每次 commit 都写入。
+
 
 ## 配置项
 

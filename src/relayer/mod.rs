@@ -221,7 +221,7 @@ impl CommitHandler for AppView {
         self.last_seq
             .store(seq, std::sync::atomic::Ordering::SeqCst);
 
-        if seq % 100 == 0 {
+        if seq % 10 == 0 {
             CursorState::set_seq(&self.db, "relayer", seq)
                 .await
                 .map_err(|e| error!("cursor_state update failed: {e}"))
