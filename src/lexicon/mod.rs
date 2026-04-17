@@ -1,4 +1,5 @@
 pub mod administrator;
+pub mod cursor_state;
 pub mod like;
 pub mod meeting;
 pub mod profile;

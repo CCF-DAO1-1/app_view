@@ -10,6 +10,7 @@ use common_x::restful::axum::routing::get;
 use common_x::restful::axum::{Router, routing::post};
 use dao::api::ApiDoc;
 use dao::lexicon::administrator::Administrator;
+use dao::lexicon::cursor_state::CursorState;
 use dao::lexicon::meeting::Meeting;
 use dao::lexicon::profile::Profile;
 use dao::lexicon::task::Task;
@@ -83,6 +84,10 @@ async fn main() -> Result<()> {
     Timeline::init(&db).await?;
     Task::init(&db).await?;
     Meeting::init(&db).await?;
+    CursorState::init(&db).await?;
+
+    let initial_seq = CursorState::get_seq(&db, "relayer").await.unwrap_or(0);
+    info!("Resume relayer from seq: {}", initial_seq);
 
     let ckb_client = CkbRpcAsyncClient::new(&args.ckb_url);
 
@@ -104,7 +109,7 @@ async fn main() -> Result<()> {
             }
         },
         build_voter_list_interval: args.build_voter_list_interval,
-        last_seq: create_last_seq(0),
+        last_seq: create_last_seq(initial_seq),
     };
 
     let app_ = app.clone();

@@ -10,6 +10,7 @@ use crate::{
     atproto::{NSID_LIKE, NSID_PROFILE, NSID_PROPOSAL, NSID_REPLY},
     lexicon::{
         administrator::Administrator,
+        cursor_state::CursorState,
         like::Like,
         profile::Profile,
         proposal::Proposal,
@@ -219,6 +220,13 @@ impl CommitHandler for AppView {
 
         self.last_seq
             .store(seq, std::sync::atomic::Ordering::SeqCst);
+
+        if seq % 100 == 0 {
+            CursorState::set_seq(&self.db, "relayer", seq)
+                .await
+                .map_err(|e| error!("cursor_state update failed: {e}"))
+                .ok();
+        }
 
         Ok(())
     }
