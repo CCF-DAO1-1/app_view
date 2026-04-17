@@ -24,8 +24,9 @@ pub(crate) mod stream;
 pub mod subscription;
 
 impl CommitHandler for AppView {
-    async fn handle_commit(&self, commit: &Commit) -> Result<()> {
-        debug!("Commit: {:?}", commit.commit);
+    async fn handle_commit(&self, commit: &Commit, seq: i64) -> Result<()> {
+        self.last_seq.store(seq, std::sync::atomic::Ordering::SeqCst);
+        debug!("Commit seq={}: {:?}", seq, commit.commit);
 
         let mut repo = Repository::open(
             CarStore::open(std::io::Cursor::new(commit.blocks.as_slice())).await?,
@@ -218,5 +219,9 @@ impl CommitHandler for AppView {
         }
 
         Ok(())
+    }
+
+    fn last_seq(&self) -> i64 {
+        self.last_seq.load(std::sync::atomic::Ordering::SeqCst)
     }
 }

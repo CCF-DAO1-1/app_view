@@ -22,6 +22,8 @@ pub mod tid;
 #[macro_use]
 extern crate tracing as logger;
 
+use crate::relayer::subscription::LastSeq;
+
 #[derive(Clone)]
 pub struct AppView {
     pub db: sqlx::Pool<sqlx::Postgres>,
@@ -33,6 +35,13 @@ pub struct AppView {
     pub ckb_client: ckb_sdk::CkbRpcAsyncClient,
     pub ckb_net: ckb_sdk::NetworkType,
     pub build_voter_list_interval: u64,
+    pub last_seq: LastSeq,
+}
+
+impl AppView {
+    pub fn get_last_seq(&self) -> i64 {
+        self.last_seq.load(std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
 pub enum AddressPayloadOption {
