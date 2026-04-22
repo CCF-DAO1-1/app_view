@@ -13,4 +13,4 @@ FROM m.daocloud.io/docker.io/rust:slim-bullseye
 RUN useradd -m dao
 USER dao
 COPY --from=buildstage /build/target/release/dao /usr/bin/
-CMD ["dao", "--db-url $DB_URL", "--pds $PDS"]
+CMD dao --db-url "$DB_URL" --pds "$PDS"
