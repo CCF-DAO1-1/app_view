@@ -86,8 +86,14 @@ impl VoteMeta {
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
 
-        db.execute(query("CREATE INDEX IF NOT EXISTS idx_vote_meta_proposal_uri ON vote_meta(proposal_uri)")).await?;
-        db.execute(query("CREATE INDEX IF NOT EXISTS idx_vote_meta_state ON vote_meta(state)")).await?;
+        db.execute(query(
+            "CREATE INDEX IF NOT EXISTS idx_vote_meta_proposal_uri ON vote_meta(proposal_uri)",
+        ))
+        .await?;
+        db.execute(query(
+            "CREATE INDEX IF NOT EXISTS idx_vote_meta_state ON vote_meta(state)",
+        ))
+        .await?;
         Ok(())
     }
 

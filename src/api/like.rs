@@ -100,7 +100,10 @@ pub async fn list_like(state: &AppView, query: LikeQuery) -> Result<Value, AppEr
         views.push(LikeView {
             uri: row.uri,
             cid: row.cid,
-            author: authors.get(&row.repo).cloned().unwrap_or_else(|| json!({"did": &row.repo})),
+            author: authors
+                .get(&row.repo)
+                .cloned()
+                .unwrap_or_else(|| json!({"did": &row.repo})),
             to: row.to,
             updated: row.updated,
             created: row.created,

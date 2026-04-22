@@ -50,8 +50,14 @@ impl Reply {
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
 
-        db.execute(query("CREATE INDEX IF NOT EXISTS idx_reply_proposal ON reply(proposal)")).await?;
-        db.execute(query("CREATE INDEX IF NOT EXISTS idx_reply_to ON reply(to)")).await?;
+        db.execute(query(
+            "CREATE INDEX IF NOT EXISTS idx_reply_proposal ON reply(proposal)",
+        ))
+        .await?;
+        db.execute(query(
+            "CREATE INDEX IF NOT EXISTS idx_reply_to ON reply(to)",
+        ))
+        .await?;
         Ok(())
     }
 

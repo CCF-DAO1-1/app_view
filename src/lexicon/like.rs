@@ -41,8 +41,12 @@ impl Like {
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
 
-        db.execute(query("CREATE INDEX IF NOT EXISTS idx_like_to ON like(to)")).await?;
-        db.execute(query("CREATE INDEX IF NOT EXISTS idx_like_repo ON like(repo)")).await?;
+        db.execute(query("CREATE INDEX IF NOT EXISTS idx_like_to ON like(to)"))
+            .await?;
+        db.execute(query(
+            "CREATE INDEX IF NOT EXISTS idx_like_repo ON like(repo)",
+        ))
+        .await?;
         Ok(())
     }
 

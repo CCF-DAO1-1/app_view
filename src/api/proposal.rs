@@ -107,7 +107,10 @@ pub async fn list(
 
     let mut views = vec![];
     for row in rows {
-        let author = authors.get(&row.repo).cloned().unwrap_or_else(|| json!({"did": &row.repo}));
+        let author = authors
+            .get(&row.repo)
+            .cloned()
+            .unwrap_or_else(|| json!({"did": &row.repo}));
         views.push(ProposalView::build(row, author, None));
     }
     let cursor = views.last().map(|r| r.updated.timestamp());

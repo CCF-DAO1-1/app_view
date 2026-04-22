@@ -124,7 +124,10 @@ pub async fn build_author(state: &AppView, repo: &str) -> Value {
     authors.remove(repo).unwrap_or_else(|| json!({"did": repo}))
 }
 
-pub async fn build_authors(state: &AppView, repos: &[&str]) -> std::collections::HashMap<String, Value> {
+pub async fn build_authors(
+    state: &AppView,
+    repos: &[&str],
+) -> std::collections::HashMap<String, Value> {
     let mut result = std::collections::HashMap::new();
     if repos.is_empty() {
         return result;
@@ -132,7 +135,7 @@ pub async fn build_authors(state: &AppView, repos: &[&str]) -> std::collections:
 
     // Batch fetch profiles from database to avoid N+1 queries
     let (sql, values) = Profile::build_select()
-        .and_where(Expr::col(Profile::Did).is_in(repos.iter().map(|r| *r).collect::<Vec<_>>()))
+        .and_where(Expr::col(Profile::Did).is_in(repos.iter().copied()))
         .build_sqlx(PostgresQueryBuilder);
     let db_profiles: Vec<ProfileRow> = sqlx::query_as_with(&sql, values)
         .fetch_all(&state.db)

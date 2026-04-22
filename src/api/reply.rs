@@ -110,9 +110,15 @@ pub async fn list_reply(state: &AppView, query: ReplyQuery) -> Result<Value, App
         views.push(ReplyView {
             uri: row.uri,
             cid: row.cid,
-            author: authors.get(&row.repo).cloned().unwrap_or_else(|| json!({"did": &row.repo})),
+            author: authors
+                .get(&row.repo)
+                .cloned()
+                .unwrap_or_else(|| json!({"did": &row.repo})),
             proposal: row.proposal,
-            to: authors.get(&row.to).cloned().unwrap_or_else(|| json!({"did": &row.to})),
+            to: authors
+                .get(&row.to)
+                .cloned()
+                .unwrap_or_else(|| json!({"did": &row.to})),
             text: row.text,
             updated: row.updated,
             created: row.created,

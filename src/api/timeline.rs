@@ -78,7 +78,10 @@ pub async fn get(
             timeline_type: row.timeline_type,
             message: row.message,
             target: row.target,
-            operator: authors.get(&row.operator).cloned().unwrap_or_else(|| json!({"did": &row.operator})),
+            operator: authors
+                .get(&row.operator)
+                .cloned()
+                .unwrap_or_else(|| json!({"did": &row.operator})),
             timestamp: row.timestamp,
         });
     }
