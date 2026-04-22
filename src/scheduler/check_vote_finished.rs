@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use ckb_types::core::EpochNumberWithFraction;
 use ckb_types::prelude::Entity;
-use color_eyre::{Result, eyre::OptionExt};
+use color_eyre::{
+    Result,
+    eyre::{OptionExt, eyre},
+};
 use sea_query::{Expr, ExprTrait, PostgresQueryBuilder};
 use sea_query_sqlx::SqlxBinder;
 use serde_json::json;
@@ -520,13 +523,12 @@ pub async fn build_vote_results(
     end_block_number: u64,
     detail: bool,
 ) -> Result<VoteResults> {
+    let hash_str = tx_hash.ok_or_eyre("tx_hash is None")?;
+    let hash_bytes: [u8; 32] = hex::decode(hash_str.trim_start_matches("0x"))?
+        .try_into()
+        .map_err(|_| eyre!("invalid tx_hash length"))?;
     let vote_meta_out_point: ckb_types::packed::OutPoint = ckb_jsonrpc_types::OutPoint {
-        tx_hash: ckb_types::H256(
-            hex::decode(tx_hash.unwrap().trim_start_matches("0x"))
-                .unwrap()
-                .try_into()
-                .unwrap(),
-        ),
+        tx_hash: ckb_types::H256(hash_bytes),
         index: 0.into(),
     }
     .into();
