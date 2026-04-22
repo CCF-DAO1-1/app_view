@@ -1,14 +1,19 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::OnceLock, time::Duration};
 
 use color_eyre::{Result, eyre::eyre};
 use serde_json::json;
+
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
 
 pub async fn query_dao_stake_until_height(
     url: &str,
     until_height: Option<u64>,
     ckb_addrs: &[String],
 ) -> Result<HashMap<String, u64>> {
-    reqwest::Client::new()
+    http_client()
         .post(format!("{url}/dao-stake-set"))
         .body(
             json!({

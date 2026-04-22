@@ -1,10 +1,15 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::OnceLock, time::Duration};
 
 use color_eyre::{Result, eyre::eyre};
 use serde_json::Value;
 
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
+
 pub async fn did_set(url: &str, until_height: u64) -> Result<HashMap<String, String>> {
-    reqwest::Client::new()
+    http_client()
         .get(format!("{url}/did-set?until_height={until_height}"))
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
@@ -17,7 +22,7 @@ pub async fn did_set(url: &str, until_height: u64) -> Result<HashMap<String, Str
 }
 
 pub async fn did_document(url: &str, did: &str) -> Result<Value> {
-    reqwest::Client::new()
+    http_client()
         .get(format!("{url}/{did}"))
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
@@ -30,7 +35,7 @@ pub async fn did_document(url: &str, did: &str) -> Result<Value> {
 }
 
 pub async fn ckb_did(url: &str, ckb_addr: &str) -> Result<Vec<String>> {
-    reqwest::Client::new()
+    http_client()
         .get(format!("{url}/resolve-ckb-addr/{ckb_addr}"))
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))

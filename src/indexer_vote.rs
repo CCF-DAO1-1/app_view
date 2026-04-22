@@ -1,7 +1,12 @@
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 
 use color_eyre::{Result, eyre::eyre};
 use serde_json::Value;
+
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
 
 pub async fn all_votes(
     url: &str,
@@ -10,7 +15,7 @@ pub async fn all_votes(
     epoch_index: i64,
     epoch_length: i64,
 ) -> Result<Value> {
-    let rsp = reqwest::Client::new()
+    let rsp = http_client()
         .get(format!("{url}/all-votes"))
         .query(&[
             ("args", args),
@@ -39,7 +44,7 @@ pub async fn address_vote(
     epoch_index: i64,
     epoch_length: i64,
 ) -> Result<Value> {
-    reqwest::Client::new()
+    http_client()
         .get(format!("{url}/address-vote"))
         .query(&[
             ("args", args),

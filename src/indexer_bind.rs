@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    sync::OnceLock,
     time::Duration,
 };
 
@@ -9,8 +10,13 @@ use color_eyre::{
 };
 use serde_json::Value;
 
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
+
 pub async fn query_by_to(url: &str, to: &str) -> Result<Value> {
-    reqwest::Client::new()
+    http_client()
         .get(format!("{url}/by_to/{to}"))
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
@@ -27,7 +33,7 @@ pub async fn query_by_to(url: &str, to: &str) -> Result<Value> {
 }
 
 pub async fn query_by_to_at_height(url: &str, to: &str, height: u64) -> Result<Value> {
-    reqwest::Client::new()
+    http_client()
         .get(format!("{url}/by_to_at_height/{to}/{height}"))
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))
@@ -44,7 +50,7 @@ pub async fn query_by_to_at_height(url: &str, to: &str, height: u64) -> Result<V
 }
 
 pub async fn query_by_from(url: &str, from: &str) -> Result<Value> {
-    reqwest::Client::new()
+    http_client()
         .get(format!("{url}/by_from/{from}"))
         .header("Content-Type", "application/json; charset=utf-8")
         .timeout(Duration::from_secs(5))

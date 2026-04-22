@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 
 use color_eyre::{Result, eyre::eyre};
 use serde_json::Value;
@@ -8,8 +8,13 @@ pub const NSID_REPLY: &str = "app.dao.reply";
 pub const NSID_LIKE: &str = "app.dao.like";
 pub const NSID_PROFILE: &str = "app.actor.profile";
 
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
+
 pub async fn get_record(url: &str, repo: &str, nsid: &str, rkey: &str) -> Result<Value> {
-    reqwest::Client::new()
+    http_client()
         .get(format!("{url}/xrpc/com.atproto.repo.getRecord"))
         .query(&[("repo", repo), ("collection", nsid), ("rkey", rkey)])
         .header("Content-Type", "application/json; charset=utf-8")
