@@ -1,8 +1,8 @@
 use color_eyre::eyre::Error;
 use common_x::restful::axum::{
-    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
+    Json,
 };
 use serde_json::json;
 
@@ -18,31 +18,19 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error, error_message) = match self {
-            AppError::ValidateFailed(msg) => (
-                StatusCode::BAD_REQUEST,
-                "ValidateFailed",
-                string_to_static_str(msg),
-            ),
-            AppError::NotFound => (
-                StatusCode::NOT_FOUND,
-                "NotFound",
-                string_to_static_str("NOT_FOUND".to_owned()),
-            ),
+            AppError::ValidateFailed(msg) => (StatusCode::BAD_REQUEST, "ValidateFailed", msg),
+            AppError::NotFound => (StatusCode::NOT_FOUND, "NotFound", "NOT_FOUND".to_owned()),
             AppError::ExecSqlFailed(_msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "ExecSqlFailed",
-                string_to_static_str("ExecSqlFailed".to_string()),
+                "ExecSqlFailed".to_string(),
             ),
             AppError::CallPdsFailed(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "CallPdsFailed",
-                string_to_static_str(json!({"pds": msg}).to_string()),
+                json!({"pds": msg}).to_string(),
             ),
-            AppError::Unknown(msg) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "ServerError",
-                string_to_static_str(msg),
-            ),
+            AppError::Unknown(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "ServerError", msg),
         };
         let body = Json(json!({
             "code": status.as_u16(),
@@ -60,8 +48,4 @@ where
     fn from(err: E) -> Self {
         Self::Unknown(err.into().to_string())
     }
-}
-
-fn string_to_static_str(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
 }
