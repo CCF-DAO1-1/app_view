@@ -12,6 +12,27 @@ use color_eyre::{
 };
 use serde_json::json;
 
+// CKB contract code hashes
+const OMNI_LOCK_MAINNET_CODE_HASH: &str =
+    "9b819793a64463aed77c615d6cb226eea5487ccfc0783043a587254cda2b6f26";
+const OMNI_LOCK_TESTNET_CODE_HASH: &str =
+    "f329effd1c475a2978453c8600e1eaf0bc2087ee093c3ee64cc96ec6847752cb";
+
+const PW_MAINNET_CODE_HASH: &str =
+    "bf43c3602455798c1a61a596e0d95278864c552fafe231c063b3fabf97a8febc";
+const PW_TESTNET_CODE_HASH: &str =
+    "58c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63";
+
+const VOTE_MAINNET_CODE_HASH: &str =
+    "0x38716b429cb139405d32ff86a916827862b2fa819916894848d8460da8953afb";
+const VOTE_TESTNET_CODE_HASH: &str =
+    "0xb140de2d7d1536cfdcb82da7520475edce5785dff90edae9073c1143d88f50c5";
+
+const DID_MAINNET_CODE_HASH: &str =
+    "4a06164dc34dccade5afe3e847a97b6db743e79f5477fa3295acf02849c5984a";
+const DID_TESTNET_CODE_HASH: &str =
+    "510150477b10d6ab551a509b71265f3164e9fd4137fcb5a4322f49f03092c7c5";
+
 pub fn pw_lock(ckb_net: NetworkType, ckb_addr: &str) -> Option<Address> {
     if let Ok(address) = crate::AddressParser::default()
         .set_network(ckb_net)
@@ -19,30 +40,22 @@ pub fn pw_lock(ckb_net: NetworkType, ckb_addr: &str) -> Option<Address> {
     {
         let lock = ckb_types::packed::Script::from(address.payload());
         let code_hash = lock.code_hash().as_slice().to_vec();
-        let l_code_hash = match ckb_net {
-            NetworkType::Mainnet => {
-                "9b819793a64463aed77c615d6cb226eea5487ccfc0783043a587254cda2b6f26"
-            }
+        let omni_code_hash = match ckb_net {
+            NetworkType::Mainnet => OMNI_LOCK_MAINNET_CODE_HASH,
             NetworkType::Testnet
             | NetworkType::Dev
             | NetworkType::Staging
-            | NetworkType::Preview => {
-                "f329effd1c475a2978453c8600e1eaf0bc2087ee093c3ee64cc96ec6847752cb"
-            }
+            | NetworkType::Preview => OMNI_LOCK_TESTNET_CODE_HASH,
         };
-        if Ok(code_hash) == hex::decode(l_code_hash) {
+        if Ok(code_hash) == hex::decode(omni_code_hash) {
             let args = hex::encode(lock.args().raw_data());
             if args.starts_with("12") {
                 let pw_code_hash = match ckb_net {
-                    NetworkType::Mainnet => {
-                        "bf43c3602455798c1a61a596e0d95278864c552fafe231c063b3fabf97a8febc"
-                    }
+                    NetworkType::Mainnet => PW_MAINNET_CODE_HASH,
                     NetworkType::Testnet
                     | NetworkType::Dev
                     | NetworkType::Staging
-                    | NetworkType::Preview => {
-                        "58c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63"
-                    }
+                    | NetworkType::Preview => PW_TESTNET_CODE_HASH,
                 };
                 let payload = AddressPayload::Full {
                     hash_type: ScriptHashType::Type,
@@ -82,11 +95,9 @@ pub async fn get_vote_result(
     let args = pubkey_hash[0..20].to_vec();
     let args = format!("0x{}", hex::encode(args));
     let vote_code_hash = match ckb_net {
-        NetworkType::Mainnet => {
-            "0x38716b429cb139405d32ff86a916827862b2fa819916894848d8460da8953afb"
-        }
+        NetworkType::Mainnet => VOTE_MAINNET_CODE_HASH,
         NetworkType::Testnet | NetworkType::Dev | NetworkType::Staging | NetworkType::Preview => {
-            "0xb140de2d7d1536cfdcb82da7520475edce5785dff90edae9073c1143d88f50c5"
+            VOTE_TESTNET_CODE_HASH
         }
     };
     let search_key = json!({
@@ -149,9 +160,9 @@ pub async fn get_ckb_addr_by_did(
     let did = did.trim_start_matches("did:ckb:");
     let did = did.trim_start_matches("did:plc:");
     let code_hash = match ckb_net {
-        NetworkType::Mainnet => "4a06164dc34dccade5afe3e847a97b6db743e79f5477fa3295acf02849c5984a",
+        NetworkType::Mainnet => DID_MAINNET_CODE_HASH,
         NetworkType::Testnet | NetworkType::Dev | NetworkType::Staging | NetworkType::Preview => {
-            "510150477b10d6ab551a509b71265f3164e9fd4137fcb5a4322f49f03092c7c5"
+            DID_TESTNET_CODE_HASH
         }
     };
     let r = ckb_client
