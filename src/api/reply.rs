@@ -13,7 +13,7 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    api::{ToTimestamp, build_author},
+    api::{ToTimestamp, build_authors},
     error::AppError,
     lexicon::reply::{Reply, ReplyRow, ReplyView},
 };
@@ -96,14 +96,23 @@ pub async fn list_reply(state: &AppView, query: ReplyQuery) -> Result<Value, App
         .await
         .map_err(|e| eyre!("exec sql failed: {e}"))?;
 
+    // Batch fetch authors to avoid N+1 queries
+    let repos: Vec<&str> = rows
+        .iter()
+        .flat_map(|r| [r.repo.as_str(), r.to.as_str()])
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let authors = build_authors(state, &repos).await;
+
     let mut views = vec![];
     for row in rows {
         views.push(ReplyView {
             uri: row.uri,
             cid: row.cid,
-            author: build_author(state, &row.repo).await,
+            author: authors.get(&row.repo).cloned().unwrap_or_else(|| json!({"did": &row.repo})),
             proposal: row.proposal,
-            to: build_author(state, &row.to).await,
+            to: authors.get(&row.to).cloned().unwrap_or_else(|| json!({"did": &row.to})),
             text: row.text,
             updated: row.updated,
             created: row.created,

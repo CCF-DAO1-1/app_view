@@ -17,7 +17,7 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    api::{SignedBody, SignedParam, ToTimestamp, build_author, create_vote_tx},
+    api::{SignedBody, SignedParam, ToTimestamp, build_author, build_authors, create_vote_tx},
     error::AppError,
     lexicon::{
         administrator::{Administrator, AdministratorRow},
@@ -101,9 +101,13 @@ pub async fn list(
         .await
         .map_err(|e| eyre!("exec sql failed: {e}"))?;
 
+    // Batch fetch authors to avoid N+1 queries
+    let repos: Vec<&str> = rows.iter().map(|r| r.repo.as_str()).collect();
+    let authors = build_authors(&state, &repos).await;
+
     let mut views = vec![];
     for row in rows {
-        let author = build_author(&state, &row.repo).await;
+        let author = authors.get(&row.repo).cloned().unwrap_or_else(|| json!({"did": &row.repo}));
         views.push(ProposalView::build(row, author, None));
     }
     let cursor = views.last().map(|r| r.updated.timestamp());

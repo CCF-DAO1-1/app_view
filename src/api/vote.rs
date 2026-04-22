@@ -479,34 +479,59 @@ pub async fn list_self(
             debug!("exec sql failed: {e}");
             AppError::ExecSqlFailed(e.to_string())
         })?;
-    let mut views = vec![];
 
+    // Batch fetch vote_meta to avoid N+1 queries
+    let vote_meta_ids: Vec<i32> = rows.iter().map(|r| r.vote_meta_id).collect();
+    let vote_meta_map = if !vote_meta_ids.is_empty() {
+        let (sql, value) = VoteMeta::build_select()
+            .and_where(Expr::col(VoteMeta::Id).is_in(vote_meta_ids))
+            .build_sqlx(PostgresQueryBuilder);
+        query_as_with::<_, VoteMetaRow, _>(&sql, value)
+            .fetch_all(&state.db)
+            .await
+            .map_err(|e| {
+                debug!("exec sql failed: {e}");
+                AppError::ExecSqlFailed(e.to_string())
+            })?
+            .into_iter()
+            .map(|r| (r.id, r))
+            .collect::<std::collections::HashMap<_, _>>()
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    // Batch fetch proposals to avoid N+1 queries
+    let proposal_uris: Vec<String> = vote_meta_map
+        .values()
+        .map(|r| r.proposal_uri.clone())
+        .collect();
+    let proposal_map = if !proposal_uris.is_empty() {
+        let (sql, value) = Proposal::build_sample()
+            .and_where(Expr::col(Proposal::Uri).is_in(proposal_uris))
+            .build_sqlx(PostgresQueryBuilder);
+        query_as_with::<_, ProposalSample, _>(&sql, value)
+            .fetch_all(&state.db)
+            .await
+            .map_err(|e| {
+                debug!("exec sql failed: {e}");
+                AppError::ExecSqlFailed(e.to_string())
+            })?
+            .into_iter()
+            .map(|r| (r.uri.clone(), r))
+            .collect::<std::collections::HashMap<_, _>>()
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    let mut views = vec![];
     for row in &rows {
         let mut view = json!(row);
-        let (sql, value) = VoteMeta::build_select()
-            .and_where(Expr::col(VoteMeta::Id).eq(row.vote_meta_id))
-            .build_sqlx(PostgresQueryBuilder);
-        let vote_meta_row: VoteMetaRow = query_as_with(&sql, value)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e| {
-                debug!("exec sql failed: {e}");
-                AppError::ExecSqlFailed(e.to_string())
-            })?;
-        view["vote_meta"] = json!(vote_meta_row);
-
-        let (sql, value) = Proposal::build_sample()
-            .and_where(Expr::col(Proposal::Uri).eq(vote_meta_row.proposal_uri.clone()))
-            .build_sqlx(PostgresQueryBuilder);
-        let proposal_row: ProposalSample = query_as_with(&sql, value)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e| {
-                debug!("exec sql failed: {e}");
-                AppError::ExecSqlFailed(e.to_string())
-            })?;
-        view["proposal"] = json!(proposal_row);
-
+        if let Some(vote_meta_row) = vote_meta_map.get(&row.vote_meta_id) {
+            view["vote_meta"] = json!(vote_meta_row);
+            if let Some(proposal_row) = proposal_map.get(&vote_meta_row.proposal_uri) {
+                view["proposal"] = json!(proposal_row);
+            }
+        }
         views.push(view);
     }
 

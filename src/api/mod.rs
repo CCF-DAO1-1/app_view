@@ -120,42 +120,78 @@ impl sea_query::Iden for ToTimestamp {
 }
 
 pub async fn build_author(state: &AppView, repo: &str) -> Value {
-    let (sql, values) = Profile::build_select()
-        .and_where(Expr::col(Profile::Did).eq(repo))
-        .build_sqlx(PostgresQueryBuilder);
-    let row: Option<ProfileRow> = sqlx::query_as_with(&sql, values)
-        .fetch_optional(&state.db)
-        .await
-        .unwrap_or(None);
-    let mut author = if let Some(profile) = row {
-        profile.profile
-    } else if let Ok(profile) = get_record(&state.pds, repo, NSID_PROFILE, "self")
-        .await
-        .and_then(|row| row.get("value").cloned().ok_or_eyre("NOT_FOUND"))
-    {
-        Profile::insert(&state.db, repo, profile.clone()).await.ok();
-        profile
-    } else {
-        json!({
-            "did": repo
-        })
-    };
-    author["did"] = Value::String(repo.to_owned());
-    if let Ok(ckb_addr) = crate::ckb::get_ckb_addr_by_did(
-        &state.ckb_client,
-        &state.ckb_net,
-        repo.strip_prefix("did:web5")
-            .unwrap_or(repo)
-            .strip_prefix("did:ckb")
-            .unwrap_or(repo)
-            .strip_prefix("did:plc")
-            .unwrap_or(repo),
-    )
-    .await
-    {
-        author["ckb_addr"] = Value::String(ckb_addr);
+    let mut authors = build_authors(state, &[repo]).await;
+    authors.remove(repo).unwrap_or_else(|| json!({"did": repo}))
+}
+
+pub async fn build_authors(state: &AppView, repos: &[&str]) -> std::collections::HashMap<String, Value> {
+    let mut result = std::collections::HashMap::new();
+    if repos.is_empty() {
+        return result;
     }
-    author
+
+    // Batch fetch profiles from database to avoid N+1 queries
+    let (sql, values) = Profile::build_select()
+        .and_where(Expr::col(Profile::Did).is_in(repos.iter().map(|r| *r).collect::<Vec<_>>()))
+        .build_sqlx(PostgresQueryBuilder);
+    let db_profiles: Vec<ProfileRow> = sqlx::query_as_with(&sql, values)
+        .fetch_all(&state.db)
+        .await
+        .unwrap_or_default();
+
+    for profile_row in db_profiles {
+        let repo = profile_row.did;
+        let mut author = profile_row.profile;
+        author["did"] = Value::String(repo.clone());
+        if let Ok(ckb_addr) = crate::ckb::get_ckb_addr_by_did(
+            &state.ckb_client,
+            &state.ckb_net,
+            repo.strip_prefix("did:web5")
+                .unwrap_or(&repo)
+                .strip_prefix("did:ckb")
+                .unwrap_or(&repo)
+                .strip_prefix("did:plc")
+                .unwrap_or(&repo),
+        )
+        .await
+        {
+            author["ckb_addr"] = Value::String(ckb_addr);
+        }
+        result.insert(repo, author);
+    }
+
+    // Fallback to individual fetch for missing profiles
+    for repo in repos {
+        if !result.contains_key(*repo) {
+            let mut author = if let Ok(profile) = get_record(&state.pds, repo, NSID_PROFILE, "self")
+                .await
+                .and_then(|row| row.get("value").cloned().ok_or_eyre("NOT_FOUND"))
+            {
+                Profile::insert(&state.db, repo, profile.clone()).await.ok();
+                profile
+            } else {
+                json!({"did": repo})
+            };
+            author["did"] = Value::String((*repo).to_owned());
+            if let Ok(ckb_addr) = crate::ckb::get_ckb_addr_by_did(
+                &state.ckb_client,
+                &state.ckb_net,
+                repo.strip_prefix("did:web5")
+                    .unwrap_or(repo)
+                    .strip_prefix("did:ckb")
+                    .unwrap_or(repo)
+                    .strip_prefix("did:plc")
+                    .unwrap_or(repo),
+            )
+            .await
+            {
+                author["ckb_addr"] = Value::String(ckb_addr);
+            }
+            result.insert((*repo).to_string(), author);
+        }
+    }
+
+    result
 }
 
 pub trait SignedParam: Default + ToSchema + Serialize + Validate {

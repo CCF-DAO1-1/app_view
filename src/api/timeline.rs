@@ -14,10 +14,11 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    api::build_author,
+    api::build_authors,
     error::AppError,
     lexicon::timeline::{Timeline, TimelineRow, TimelineView},
 };
+use serde_json::json;
 
 #[derive(Debug, Default, Validate, Deserialize, IntoParams)]
 #[serde(default)]
@@ -54,6 +55,10 @@ pub async fn get(
         .await
         .map_err(|e| eyre!("exec sql failed: {e}"))?;
 
+    // Batch fetch authors to avoid N+1 queries
+    let repos: Vec<&str> = rows.iter().map(|r| r.operator.as_str()).collect();
+    let authors = build_authors(&state, &repos).await;
+
     let mut views = vec![];
     for row in rows {
         views.push(TimelineView {
@@ -61,7 +66,7 @@ pub async fn get(
             timeline_type: row.timeline_type,
             message: row.message,
             target: row.target,
-            operator: build_author(&state, &row.operator).await,
+            operator: authors.get(&row.operator).cloned().unwrap_or_else(|| json!({"did": &row.operator})),
             timestamp: row.timestamp,
         });
     }

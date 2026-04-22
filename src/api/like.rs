@@ -13,7 +13,7 @@ use validator::Validate;
 
 use crate::{
     AppView,
-    api::{ToTimestamp, build_author},
+    api::{ToTimestamp, build_authors},
     error::AppError,
     lexicon::like::{Like, LikeRow, LikeView},
 };
@@ -91,12 +91,16 @@ pub async fn list_like(state: &AppView, query: LikeQuery) -> Result<Value, AppEr
         .await
         .map_err(|e| eyre!("exec sql failed: {e}"))?;
 
+    // Batch fetch authors to avoid N+1 queries
+    let repos: Vec<&str> = rows.iter().map(|r| r.repo.as_str()).collect();
+    let authors = build_authors(state, &repos).await;
+
     let mut views = vec![];
     for row in rows {
         views.push(LikeView {
             uri: row.uri,
             cid: row.cid,
-            author: build_author(state, &row.repo).await,
+            author: authors.get(&row.repo).cloned().unwrap_or_else(|| json!({"did": &row.repo})),
             to: row.to,
             updated: row.updated,
             created: row.created,
