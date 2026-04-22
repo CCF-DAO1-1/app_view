@@ -176,7 +176,7 @@ impl CommitHandler for AppView {
                 .and_where(Expr::col(Profile::Did).is_in(profile_to_delete))
                 .build_sqlx(PostgresQueryBuilder);
             sqlx::query_with(&sql, values)
-                .fetch_one(&self.db)
+                .execute(&self.db)
                 .await
                 .map_err(|e| error!("sql execute failed: {e}"))
                 .ok();
@@ -188,7 +188,7 @@ impl CommitHandler for AppView {
                 .and_where(Expr::col(Proposal::Uri).is_in(proposal_to_delete))
                 .build_sqlx(PostgresQueryBuilder);
             sqlx::query_with(&sql, values)
-                .fetch_one(&self.db)
+                .execute(&self.db)
                 .await
                 .map_err(|e| error!("sql execute failed: {e}"))
                 .ok();
@@ -200,7 +200,7 @@ impl CommitHandler for AppView {
                 .and_where(Expr::col(Reply::Uri).is_in(reply_to_delete))
                 .build_sqlx(PostgresQueryBuilder);
             sqlx::query_with(&sql, values)
-                .fetch_one(&self.db)
+                .execute(&self.db)
                 .await
                 .map_err(|e| error!("sql execute failed: {e}"))
                 .ok();
@@ -212,7 +212,7 @@ impl CommitHandler for AppView {
                 .and_where(Expr::col(Like::Uri).is_in(like_to_delete))
                 .build_sqlx(PostgresQueryBuilder);
             sqlx::query_with(&sql, values)
-                .fetch_one(&self.db)
+                .execute(&self.db)
                 .await
                 .map_err(|e| error!("sql execute failed: {e}"))
                 .ok();
