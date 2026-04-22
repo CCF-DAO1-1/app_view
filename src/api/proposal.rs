@@ -93,7 +93,7 @@ pub async fn list(
                 .map(|q| Expr::cust_with_values("record #>> '{{data,title}}' like CONCAT('%', $1, '%') or record #>> '{{data,goals}}' like CONCAT('%', $2, '%') or record #>> '{{data,team}}' like CONCAT('%', $3, '%')", [&q, &q, &q])),
         )
         .order_by(Proposal::Updated, Order::Desc)
-        .limit(query.limit)
+        .limit(std::cmp::min(query.limit, 100))
         .build_sqlx(PostgresQueryBuilder);
 
     let rows: Vec<ProposalRow> = query_as_with(&sql, values.clone())
@@ -154,7 +154,7 @@ pub async fn receiver_addr(
     let (sql, values) = Proposal::build_sample()
         .and_where(Expr::col(Proposal::ReceiverAddr).is_not_null())
         .order_by(Proposal::Updated, Order::Desc)
-        .limit(query.per_page)
+        .limit(std::cmp::min(query.per_page, 100))
         .offset(offset)
         .build_sqlx(PostgresQueryBuilder);
     let rows: Vec<ProposalSample> = query_as_with(&sql, values)
@@ -212,7 +212,7 @@ pub async fn list_self(
     let (sql, values) = Proposal::build_sample()
         .and_where(Expr::col(Proposal::Repo).eq(&query.did))
         .order_by(Proposal::Updated, Order::Desc)
-        .limit(query.per_page)
+        .limit(std::cmp::min(query.per_page, 100))
         .offset(offset)
         .build_sqlx(PostgresQueryBuilder);
     let rows: Vec<ProposalSample> = query_as_with(&sql, values)
@@ -261,7 +261,7 @@ pub async fn replied(
         ])
         .and_where(Expr::col(Reply::Repo).eq(&query.did))
         .from(Reply::Table)
-        .limit(query.per_page)
+        .limit(std::cmp::min(query.per_page, 100))
         .offset(offset)
         .build_sqlx(PostgresQueryBuilder);
     let replies: Vec<ReplySampleRow> = query_as_with(&sql, values.clone())

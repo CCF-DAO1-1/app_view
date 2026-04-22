@@ -88,7 +88,7 @@ pub async fn get(
         )
         .order_by(Task::Created, Order::Desc)
         .offset(offset)
-        .limit(query.per_page)
+        .limit(std::cmp::min(query.per_page, 100))
         .build_sqlx(PostgresQueryBuilder);
 
     let rows: Vec<TaskRow> = sqlx::query_as_with(&sql, values)

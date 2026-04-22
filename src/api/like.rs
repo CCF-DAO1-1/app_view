@@ -83,7 +83,7 @@ pub async fn list_like(state: &AppView, query: LikeQuery) -> Result<Value, AppEr
                 }),
         )
         .order_by(Like::Created, Order::Asc)
-        .limit(query.limit)
+        .limit(std::cmp::min(query.limit, 100))
         .build_sqlx(PostgresQueryBuilder);
 
     let rows: Vec<LikeRow> = query_as_with(&sql, values.clone())

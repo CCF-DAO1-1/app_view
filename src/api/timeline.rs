@@ -20,11 +20,22 @@ use crate::{
 };
 use serde_json::json;
 
-#[derive(Debug, Default, Validate, Deserialize, IntoParams)]
+#[derive(Debug, Validate, Deserialize, IntoParams)]
 #[serde(default)]
 pub struct TimelineQuery {
     #[validate(length(min = 1))]
     pub uri: String,
+    /// number of items to return
+    pub limit: u64,
+}
+
+impl Default for TimelineQuery {
+    fn default() -> Self {
+        Self {
+            uri: String::new(),
+            limit: 50,
+        }
+    }
 }
 
 #[utoipa::path(get, path = "/api/timeline", params(TimelineQuery))]
@@ -48,6 +59,7 @@ pub async fn get(
         .from(Timeline::Table)
         .and_where(Expr::col(Timeline::Target).eq(query.uri))
         .order_by(Timeline::Timestamp, Order::Desc)
+        .limit(std::cmp::min(query.limit, 100))
         .build_sqlx(PostgresQueryBuilder);
 
     let rows: Vec<TimelineRow> = sqlx::query_as_with(&sql, values)

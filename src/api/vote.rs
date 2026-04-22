@@ -469,7 +469,7 @@ pub async fn list_self(
     let (sql, value) = Vote::build_select()
         .and_where(Expr::col(Vote::Voter).eq(query.did.clone()))
         .order_by(Vote::Created, Order::Desc)
-        .limit(query.per_page)
+        .limit(std::cmp::min(query.per_page, 100))
         .offset(offset)
         .build_sqlx(PostgresQueryBuilder);
     let rows: Vec<VoteRow> = query_as_with(&sql, value)

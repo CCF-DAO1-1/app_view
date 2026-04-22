@@ -88,7 +88,7 @@ pub async fn list_reply(state: &AppView, query: ReplyQuery) -> Result<Value, App
             )
         }))
         .order_by(Reply::Created, Order::Asc)
-        .limit(query.limit)
+        .limit(std::cmp::min(query.limit, 100))
         .build_sqlx(PostgresQueryBuilder);
 
     let rows: Vec<ReplyRow> = query_as_with(&sql, values.clone())
