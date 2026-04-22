@@ -2,8 +2,8 @@ use atrium_api::com::atproto::sync::subscribe_repos::Commit;
 use color_eyre::{Result, eyre::eyre};
 use futures::StreamExt;
 use std::future::Future;
-use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicI64;
 use tokio::net::TcpStream;
 use tokio::time::{Duration, timeout};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
@@ -39,7 +39,7 @@ impl RepoSubscription {
         })
     }
 
-    pub fn with_heartbeat_timeout(mut self, secs: u64) -> Self {
+    pub const fn with_heartbeat_timeout(mut self, secs: u64) -> Self {
         self.heartbeat_timeout_secs = secs;
         self
     }
@@ -53,24 +53,22 @@ impl RepoSubscription {
             .await;
 
             match result {
-                Ok(Some(Ok(Message::Binary(data)))) => {
-                    match Frame::try_from(data.as_ref()) {
-                        Ok(Frame::Message(Some(t), message)) => {
-                            if t.as_str() == "#commit" {
-                                let commit: Commit =
-                                    serde_ipld_dagcbor::from_reader(message.body.as_slice())?;
-                                let seq = commit.seq;
-                                if let Err(err) = handler.handle_commit(&commit, seq).await {
-                                    error!("FAILED: {err:?}");
-                                }
+                Ok(Some(Ok(Message::Binary(data)))) => match Frame::try_from(data.as_ref()) {
+                    Ok(Frame::Message(Some(t), message)) => {
+                        if t.as_str() == "#commit" {
+                            let commit: Commit =
+                                serde_ipld_dagcbor::from_reader(message.body.as_slice())?;
+                            let seq = commit.seq;
+                            if let Err(err) = handler.handle_commit(&commit, seq).await {
+                                error!("FAILED: {err:?}");
                             }
                         }
-                        Ok(Frame::Message(None, _)) | Ok(Frame::Error(_)) => (),
-                        Err(e) => {
-                            return Err(eyre!("frame decode error {e}"));
-                        }
                     }
-                }
+                    Ok(Frame::Message(None, _)) | Ok(Frame::Error(_)) => (),
+                    Err(e) => {
+                        return Err(eyre!("frame decode error {e}"));
+                    }
+                },
                 Ok(Some(Ok(Message::Ping(_)))) | Ok(Some(Ok(Message::Pong(_)))) => {
                     continue;
                 }

@@ -60,11 +60,7 @@ impl CursorState {
             .into_table(Self::Table)
             .columns([Self::Name, Self::Seq])
             .values(["relayer".into(), 0i64.into()])?
-            .on_conflict(
-                OnConflict::column(Self::Name)
-                    .do_nothing()
-                    .to_owned(),
-            )
+            .on_conflict(OnConflict::column(Self::Name).do_nothing().to_owned())
             .build_sqlx(PostgresQueryBuilder);
 
         db.execute(query_with(&sql, values)).await?;
@@ -79,10 +75,8 @@ impl CursorState {
             .and_where(Expr::col(Self::Name).eq(name))
             .build_sqlx(PostgresQueryBuilder);
 
-        let row: (i64,) = query_as_with(&sql, values)
-            .fetch_one(db)
-            .await?;
-        
+        let row: (i64,) = query_as_with(&sql, values).fetch_one(db).await?;
+
         Ok(row.0)
     }
 
@@ -91,7 +85,7 @@ impl CursorState {
             .table(Self::Table)
             .values([
                 (Self::Seq, seq.into()),
-                (Self::Updated, Expr::current_timestamp().into()),
+                (Self::Updated, Expr::current_timestamp()),
             ])
             .and_where(Expr::col(Self::Name).eq(name))
             .build_sqlx(PostgresQueryBuilder);

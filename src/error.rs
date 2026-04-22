@@ -1,8 +1,8 @@
 use color_eyre::eyre::Error;
 use common_x::restful::axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
 
