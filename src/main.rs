@@ -66,7 +66,13 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     common_x::log::init_log_filter(&args.log_filter);
-    info!("args: {:?}", args);
+    info!(
+        "args: port={}, ckb_net={}, apidoc={}, build_voter_list_interval={}",
+        args.port,
+        args.ckb_net,
+        args.apidoc,
+        args.build_voter_list_interval
+    );
     let db = PgPoolOptions::new()
         .max_connections(5)
         .connect(&args.db_url)
