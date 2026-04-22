@@ -22,6 +22,7 @@ use dao::relayer::subscription::{create_last_seq, run_with_reconnect};
 use dao::{AppView, api, scheduler};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 
 use dao::lexicon::like::Like;
@@ -197,6 +198,7 @@ async fn main() -> Result<()> {
         )
         .route("/api/task/rectification", post(api::task::rectification))
         .route("/api/meeting", get(api::meeting::get))
+        .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer((TimeoutLayer::with_status_code(
             reqwest::StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(10),
