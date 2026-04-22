@@ -119,6 +119,10 @@ impl Proposal {
             .col(ColumnDef::new(Self::ReceiverAddr).string())
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
+
+        db.execute(query("CREATE INDEX IF NOT EXISTS idx_proposal_repo ON proposal(repo)")).await?;
+        db.execute(query("CREATE INDEX IF NOT EXISTS idx_proposal_state ON proposal(state)")).await?;
+        db.execute(query("CREATE INDEX IF NOT EXISTS idx_proposal_updated ON proposal(updated)")).await?;
         Ok(())
     }
 

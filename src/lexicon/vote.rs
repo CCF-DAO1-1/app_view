@@ -58,6 +58,9 @@ impl Vote {
             )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
+
+        db.execute(query("CREATE INDEX IF NOT EXISTS idx_vote_vote_meta_id ON vote(vote_meta_id)")).await?;
+        db.execute(query("CREATE INDEX IF NOT EXISTS idx_vote_voter ON vote(voter)")).await?;
         Ok(())
     }
 

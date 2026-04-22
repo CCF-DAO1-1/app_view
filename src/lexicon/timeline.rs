@@ -97,6 +97,8 @@ impl Timeline {
             )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
+
+        db.execute(query("CREATE INDEX IF NOT EXISTS idx_timeline_target ON timeline(target)")).await?;
         Ok(())
     }
 

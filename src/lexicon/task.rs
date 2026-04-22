@@ -129,6 +129,10 @@ impl Task {
             )
             .build(PostgresQueryBuilder);
         db.execute(query(&sql)).await?;
+
+        db.execute(query("CREATE INDEX IF NOT EXISTS idx_task_target ON task(target)")).await?;
+        db.execute(query("CREATE INDEX IF NOT EXISTS idx_task_task_type ON task(task_type)")).await?;
+        db.execute(query("CREATE INDEX IF NOT EXISTS idx_task_state ON task(state)")).await?;
         Ok(())
     }
 
