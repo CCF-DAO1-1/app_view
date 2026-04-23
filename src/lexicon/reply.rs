@@ -55,7 +55,7 @@ impl Reply {
         ))
         .await?;
         db.execute(query(
-            "CREATE INDEX IF NOT EXISTS idx_reply_to ON reply(to)",
+            r#"CREATE INDEX IF NOT EXISTS idx_reply_to ON reply("to")"#,
         ))
         .await?;
         Ok(())
